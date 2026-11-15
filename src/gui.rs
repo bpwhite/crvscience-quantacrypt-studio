@@ -1,0 +1,783 @@
+//! Native `eframe` / `egui` 23-module passive real-time stochastic observatory GUI (`v2.2.0`).
+
+use crate::cryptanalysis::{run_grover_key_search, SHOR_PRESET_SEMIPRIMES};
+use crate::curriculum::{CurriculumGroup, ModuleId};
+use crate::density::NoiseChannelKind;
+use crate::plotter::{
+    draw_amplitude_phase_bars, draw_bloch_sphere_cloud, draw_circuit_diagram,
+    draw_lattice_2d_cloud, draw_phosphor_screen, draw_photon_stream, draw_qaoa_ring_graph, draw_repeater_chain,
+    draw_scientific_plot, draw_surface_code_grid, PlotHThreshold, PlotSeries,
+};
+use crate::pqc_lattice::{run_ml_kem_lab, MlKemProfile};
+use crate::qudit::{run_qudit_lab, QuditPreset};
+use crate::statevector::QuantumCircuit;
+use crate::stochastic_sim::{h2_fci_and_ansatz_energy, StochasticArena};
+use crate::workset::{PortableWorksetEnvelope, WorksetRepository, WorksetState};
+use eframe::egui::{self, Color32, RichText, ScrollArea, Ui, Vec2};
+use std::f64::consts::PI;
+use std::path::PathBuf;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AppStage {
+    CurriculumHub,
+    ModuleWorkspace,
+}
+
+pub struct QuantaCryptApp {
+    pub stage: AppStage,
+    pub ws: WorksetState,
+    pub arena: StochasticArena,
+    pub repo: Option<WorksetRepository>,
+    pub status_banner: String,
+    pub bloch_yaw: f32,
+    pub bloch_pitch: f32,
+    pub show_workset_modal: bool,
+    pub show_help_modal: bool,
+    pub slot_name_input: String,
+    pub json_path_input: String,
+}
+
+impl QuantaCryptApp {
+    pub fn new(db_path: PathBuf, start_in_workspace: bool, initial_module: Option<ModuleId>) -> Self {
+        let repo = WorksetRepository::open_file(&db_path).ok();
+        let mut ws = WorksetState::default();
+        if let Some(m) = initial_module {
+            ws.active_module = m;
+        }
+        let stage = if start_in_workspace || initial_module.is_some() {
+            AppStage::ModuleWorkspace
+        } else {
+            AppStage::CurriculumHub
+        };
+        let arena = StochasticArena::new(ws.seed, ws.active_module);
+        Self {
+            stage,
+            ws,
+            arena,
+            repo,
+            status_banner: "Passive Stochastic Stream Active (23 Modules) — Space: Play/Pause | R: Reset | F5/F9: Save/Load.".to_string(),
+            bloch_yaw: 0.62,
+            bloch_pitch: 0.34,
+            show_workset_modal: false,
+            show_help_modal: false,
+            slot_name_input: "session_alpha".to_string(),
+            json_path_input: "session_alpha.qworkset.json".to_string(),
+        }
+    }
+
+    fn quick_save(&mut self) {
+        if let Some(repo) = &self.repo {
+            if let Ok(hash) = repo.save_slot("quicksave", &self.ws) {
+                self.status_banner = format!("Saved preset 'quicksave' (SHA-256: {}…)", &hash[..12]);
+            }
+        }
+    }
+
+    fn quick_load(&mut self) {
+        if let Some(repo) = &self.repo {
+            if let Ok(loaded) = repo.load_slot("quicksave") {
+                self.ws = loaded;
+                self.arena.reset_stream(self.ws.seed, self.ws.active_module);
+                self.status_banner = "Loaded preset 'quicksave' and restarted stream.".to_string();
+            }
+        }
+    }
+
+    fn render_top_menu(&mut self, ctx: &egui::Context) {
+        egui::TopBottomPanel::top("quantacrypt_menubar").show(ctx, |ui| {
+            egui::menu::bar(ui, |ui| {
+                ui.label(RichText::new("QuantaCrypt Studio v2.2").strong().color(Color32::from_rgb(56, 189, 248)));
+                ui.separator();
+                if ui.selectable_label(self.stage == AppStage::CurriculumHub, "⊞ Observatory Hub (23)").clicked() {
+                    self.stage = AppStage::CurriculumHub;
+                }
+                if ui.selectable_label(self.stage == AppStage::ModuleWorkspace && self.ws.active_module == ModuleId::Q3Teleportation, "Q3 Teleport").clicked() {
+                    self.ws.active_module = ModuleId::Q3Teleportation;
+                    self.arena.reset_stream(self.ws.seed, ModuleId::Q3Teleportation);
+                    self.stage = AppStage::ModuleWorkspace;
+                }
+                if ui.selectable_label(self.stage == AppStage::ModuleWorkspace && self.ws.active_module == ModuleId::Q5EntanglementSwapping, "Q5 Swap").clicked() {
+                    self.ws.active_module = ModuleId::Q5EntanglementSwapping;
+                    self.arena.reset_stream(self.ws.seed, ModuleId::Q5EntanglementSwapping);
+                    self.stage = AppStage::ModuleWorkspace;
+                }
+                ui.menu_button("Simulations", |ui| {
+                    for grp in CurriculumGroup::ALL {
+                        ui.label(RichText::new(grp.title()).strong());
+                        for m in ModuleId::ALL.into_iter().filter(|m| m.group() == grp) {
+                            if ui.button(format!("[{}] {}", m.code(), m.title())).clicked() {
+                                self.ws.active_module = m;
+                                self.arena.reset_stream(self.ws.seed, m);
+                                self.stage = AppStage::ModuleWorkspace;
+                                ui.close_menu();
+                            }
+                        }
+                        ui.separator();
+                    }
+                });
+                ui.separator();
+                if ui.button(if self.arena.playing { "⏸ Pause" } else { "▶ Play" }).clicked() {
+                    self.arena.playing = !self.arena.playing;
+                }
+                if ui.button("↻ Reset").clicked() {
+                    self.arena.reset_stream(self.ws.seed, self.ws.active_module);
+                }
+                ui.add(egui::Slider::new(&mut self.arena.speed_mult, 0.25..=4.0).text("Speed x").fixed_decimals(2));
+                if ui.button("Presets").clicked() {
+                    self.show_workset_modal = !self.show_workset_modal;
+                }
+                if ui.button("Citations (F1)").clicked() {
+                    self.show_help_modal = !self.show_help_modal;
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.monospace(format!("t = {:.1}s | Events: {}", self.arena.sim_time, self.arena.total_events));
+                });
+            });
+        });
+    }
+
+    fn render_hub(&mut self, ui: &mut Ui) {
+        ScrollArea::vertical().show(ui, |ui| {
+            ui.add_space(6.0);
+            ui.heading("QuantaCrypt Studio v2.2 — 23-Module Passive Stochastic Quantum & Cryptography Observatory");
+            ui.label("From foundational double-slit/Stern-Gerlach/Zeno experiments to multi-qubit circuits, qudits, QKD, post-quantum cryptography, and fault-tolerant surface codes, VQE, QAOA, and magic-state factories.");
+            let mut chosen = None;
+            for grp in CurriculumGroup::ALL {
+                ui.separator();
+                ui.label(RichText::new(grp.title()).size(15.5).strong().color(Color32::from_rgb(167, 139, 250)));
+                egui::Grid::new(format!("hub_{:?}", grp)).num_columns(2).spacing([14.0, 10.0]).striped(true).show(ui, |ui| {
+                    let mods: Vec<ModuleId> = ModuleId::ALL.into_iter().filter(|m| m.group() == grp).collect();
+                    for (i, m) in mods.iter().enumerate() {
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                if ui.button(RichText::new(format!("Observe [{}]", m.code())).strong()).clicked() {
+                                    chosen = Some(*m);
+                                }
+                                ui.label(RichText::new(m.title()).strong());
+                            });
+                            ui.label(m.summary());
+                        });
+                        if i % 2 == 1 { ui.end_row(); }
+                    }
+                    if mods.len() % 2 == 1 { ui.label(""); ui.end_row(); }
+                });
+            }
+            if let Some(m) = chosen {
+                self.ws.active_module = m;
+                self.arena.reset_stream(self.ws.seed, m);
+                self.stage = AppStage::ModuleWorkspace;
+            }
+        });
+    }
+
+    fn render_left_controls(&mut self, ui: &mut Ui) {
+        let m = self.ws.active_module;
+        ScrollArea::vertical().show(ui, |ui| {
+            ui.label(RichText::new(format!("[{}] {}", m.code(), m.title())).strong().color(Color32::from_rgb(56, 189, 248)));
+            ui.label(m.summary());
+            let (cit_label, cit_url) = m.citation();
+            ui.hyperlink_to(format!("↗ {}", cit_label), cit_url);
+            ui.separator();
+            ui.label(RichText::new("Live Stochastic Stream Parameters").strong().color(Color32::from_rgb(52, 211, 153)));
+
+            match m {
+                ModuleId::I1DoubleSlit => {
+                    if ui.add(egui::Slider::new(&mut self.ws.i1_slit_sep, 2.0..=8.5).text("Slit Separation d")).changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.i1_which_path, 0.0..=1.0).text("Which-Path Detector")).changed()
+                    {
+                        self.arena.reset_stream(self.ws.seed, m);
+                    }
+                }
+                ModuleId::I2MachZehnder => {
+                    if ui.add(egui::Slider::new(&mut self.ws.i2_phase, 0.0..=(2.0 * PI)).text("Arm Phase phi")).changed()
+                        || ui.checkbox(&mut self.ws.i2_arm_blocker, "Insert Lower-Arm Bomb/Blocker").changed()
+                    {
+                        self.arena.i2_counts = [0; 3];
+                    }
+                }
+                ModuleId::I3SternGerlach => {
+                    if ui.checkbox(&mut self.ws.i3_insert_mid_filter, "Insert Middle SG2(theta) Filter").changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.i3_mid_angle_deg, 0.0..=180.0).text("SG2 Angle theta (deg)")).changed()
+                    {
+                        self.arena.i3_counts = [0; 3];
+                    }
+                }
+                ModuleId::I4QuantumZeno => {
+                    if ui.add(egui::Slider::new(&mut self.ws.i4_stages_n, 1..=32).text("Polarizer Stages N")).changed() {
+                        self.arena.i4_transmitted = 0;
+                        self.arena.i4_absorbed = 0;
+                    }
+                }
+                ModuleId::Q1BlochSingleQubit => {
+                    ui.add(egui::Slider::new(&mut self.ws.q1_theta, 0.1..=PI).text("Rabi Drive Strength"));
+                    ui.add(egui::Slider::new(&mut self.ws.q1_phi, -PI..=PI).text("Drive Axis Azimuth"));
+                }
+                ModuleId::Q2CircuitEntanglement => {
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.button("Bell |Phi+⟩").clicked() {
+                            self.ws.q2_circuit = QuantumCircuit::preset_bell_phi_plus();
+                            self.ws.q2_step_cursor = self.ws.q2_circuit.ops.len();
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                        if ui.button("4-Qubit GHZ").clicked() {
+                            self.ws.q2_circuit = QuantumCircuit::preset_ghz(4);
+                            self.ws.q2_step_cursor = self.ws.q2_circuit.ops.len();
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                        if ui.button("3-Qubit QFT").clicked() {
+                            self.ws.q2_circuit = QuantumCircuit::preset_qft(3);
+                            self.ws.q2_step_cursor = self.ws.q2_circuit.ops.len();
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                    });
+                }
+                ModuleId::Q3Teleportation => {
+                    ui.add(egui::Slider::new(&mut self.ws.q3_theta, 0.0..=PI).text("Payload theta"));
+                    ui.add(egui::Slider::new(&mut self.ws.q3_phi, -PI..=PI).text("Payload phi"));
+                    ui.add(egui::Slider::new(&mut self.ws.q3_depol_p, 0.0..=0.50).text("EPR Channel Noise p"));
+                }
+                ModuleId::Q4OpenSystemsQec => {
+                    egui::ComboBox::from_label("Kraus Channel")
+                        .selected_text(self.ws.q4_noise_kind.label())
+                        .show_ui(ui, |ui| {
+                            for k in NoiseChannelKind::ALL {
+                                ui.selectable_value(&mut self.ws.q4_noise_kind, k, k.label());
+                            }
+                        });
+                    ui.add(egui::Slider::new(&mut self.ws.q4_step_noise, 0.01..=0.25).text("Jump Rate"));
+                    ui.add(egui::Slider::new(&mut self.ws.q4_physical_p, 0.01..=0.40).text("QEC Fault Rate p"));
+                }
+                ModuleId::D1QuditWeylLab => {
+                    if ui.add(egui::Slider::new(&mut self.ws.d1_dimension_d, 2..=8).text("Qudit Dimension d")).changed() {
+                        self.arena.d1_coincidences.clear();
+                    }
+                    let dmax = self.ws.d1_dimension_d.saturating_sub(1);
+                    ui.add(egui::Slider::new(&mut self.ws.d1_shift_a, 0..=dmax).text("Weyl Shift X_d^a"));
+                }
+                ModuleId::K1Bb84Qkd => {
+                    if ui.add(egui::Slider::new(&mut self.ws.k1_eve_rate, 0.0..=1.0).text("Eve Intercept Rate")).changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.k1_channel_noise, 0.0..=0.15).text("Fiber Flip Noise")).changed()
+                    {
+                        self.arena.k1_sifted_total = 0;
+                        self.arena.k1_sifted_errors = 0;
+                    }
+                }
+                ModuleId::K2E91BellChsh => {
+                    if ui.add(egui::Slider::new(&mut self.ws.k2_eve_decoherence, 0.0..=1.0).text("Eve Singlet Probe")).changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.k2_visibility, 0.65..=1.0).text("Pair Visibility")).changed()
+                    {
+                        self.arena.k2_corr_sum = [[0.0; 3]; 3];
+                        self.arena.k2_corr_cnt = [[0; 3]; 3];
+                    }
+                }
+                ModuleId::K3B92NonOrthogonal => {
+                    if ui.add(egui::Slider::new(&mut self.ws.k3_angle_deg, 10.0..=80.0).text("Overlap Angle theta")).changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.k3_eve_rate, 0.0..=1.0).text("Eve Attack Rate")).changed()
+                    {
+                        self.arena.k3_conclusive = 0;
+                        self.arena.k3_erased = 0;
+                        self.arena.k3_errors = 0;
+                    }
+                }
+                ModuleId::C1ShorRsa => {
+                    ui.horizontal_wrapped(|ui| {
+                        for &sp in &SHOR_PRESET_SEMIPRIMES {
+                            if ui.selectable_label(self.ws.c1_modulus_n == sp, format!("N={}", sp)).clicked() {
+                                self.ws.c1_modulus_n = sp;
+                                self.arena.reset_stream(self.ws.seed, m);
+                            }
+                        }
+                    });
+                    let n_max = self.ws.c1_modulus_n.saturating_sub(1).max(2);
+                    if ui.add(egui::Slider::new(&mut self.ws.c1_base_a, 2..=n_max).text("Base a")).changed() {
+                        self.arena.reset_stream(self.ws.seed, m);
+                    }
+                }
+                ModuleId::C2GroverSymmetric => {
+                    ui.add(egui::Slider::new(&mut self.ws.c2_key_bits, 3..=9).text("Key Bits n"));
+                    let max_k = (1usize << self.ws.c2_key_bits) - 1;
+                    self.ws.c2_secret_key = self.ws.c2_secret_key.min(max_k);
+                    ui.add(egui::Slider::new(&mut self.ws.c2_secret_key, 0..=max_k).text("Target Key"));
+                }
+                ModuleId::C3MlKemLattice => {
+                    egui::ComboBox::from_label("FIPS 203 Profile")
+                        .selected_text(self.ws.c3_profile.label())
+                        .show_ui(ui, |ui| {
+                            for p in MlKemProfile::ALL {
+                                ui.selectable_value(&mut self.ws.c3_profile, p, p.label());
+                            }
+                        });
+                    ui.add(egui::Slider::new(&mut self.ws.c3_eta, 1..=20).text("Binomial Noise eta"));
+                }
+                ModuleId::C4PqcSignatures => {
+                    if ui.add(egui::Slider::new(&mut self.ws.c4_gamma1, 32..=384).text("Mask gamma_1")).changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.c4_eta, 1..=6).text("Secret eta")).changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.c4_tau, 2..=14).text("Challenge tau")).changed()
+                    {
+                        self.arena.c4_raw_bins.fill(0);
+                        self.arena.c4_acc_bins.fill(0);
+                        self.arena.c4_trials = 0;
+                        self.arena.c4_accepted = 0;
+                    }
+                }
+                ModuleId::A1SurfaceCode => {
+                    ui.horizontal(|ui| {
+                        ui.label("Code Distance:");
+                        for d in [3usize, 5, 7] {
+                            if ui.selectable_label(self.ws.a1_code_distance == d, format!("d={}", d)).clicked() {
+                                self.ws.a1_code_distance = d;
+                            }
+                        }
+                    });
+                    ui.add(egui::Slider::new(&mut self.ws.a1_phys_error, 0.001..=0.025).text("Physical Error p"));
+                }
+                ModuleId::A2VqeHydrogen => {
+                    if ui.add(egui::Slider::new(&mut self.ws.a2_bond_r_angstrom, 0.35..=2.40).text("H-H Bond R (A)")).changed() {
+                        self.arena.a2_theta = 1.10;
+                    }
+                    ui.add(egui::Slider::new(&mut self.ws.a2_shot_noise, 0.002..=0.12).text("Measurement Shot Noise"));
+                }
+                ModuleId::A3QaoaMaxCut => {
+                    if ui.add(egui::Slider::new(&mut self.ws.a3_depth_p, 1..=6).text("QAOA Layers p")).changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.a3_drive_gamma, 0.1..=2.0).text("Phase Angle gamma")).changed()
+                    {
+                        self.arena.a3_cut_bins.fill(0);
+                    }
+                }
+                ModuleId::A4MagicStateFactory => {
+                    if ui.add(egui::Slider::new(&mut self.ws.a4_raw_t_error, 0.002..=0.10).text("Raw |T> Error p_in")).changed() {
+                        self.arena.a4_batches = 0;
+                        self.arena.a4_distilled_ok = 0;
+                        self.arena.a4_distilled_err = 0;
+                        self.arena.a4_aborted_blocks = 0;
+                    }
+                }
+                ModuleId::Q5EntanglementSwapping => {
+                    if ui.add(egui::Slider::new(&mut self.ws.q5_repeater_hops, 1..=4).text("Repeater BSM Hops")).changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.q5_link_depol, 0.0..=0.25).text("Link Depolarizing p")).changed()
+                        || ui.checkbox(&mut self.ws.q5_linear_optics_bsm, "50% Linear-Optical Bell Post-Selection").changed()
+                    {
+                        self.arena.reset_stream(self.ws.seed, m);
+                    }
+                }
+                ModuleId::D2QuditTeleportation => {
+                    if ui.add(egui::Slider::new(&mut self.ws.d2_dimension_d, 2..=8).text("Qudit Dimension d")).changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.d2_mode_tilt, 0.0..=1.2).text("Payload Mode Tilt")).changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.d2_depol_p, 0.0..=0.90).text("Isotropic Noise p")).changed()
+                    {
+                        self.arena.reset_stream(self.ws.seed, m);
+                    }
+                }
+                ModuleId::A5GateTeleportation => {
+                    if ui.add(egui::Slider::new(&mut self.ws.a5_chain_depth, 1..=16).text("Chained T-Gates N")).changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.a5_raw_ancilla_p, 0.002..=0.15).text("Raw |T> Error p_raw")).changed()
+                        || ui.checkbox(&mut self.ws.a5_use_distilled, "Use A4 15-to-1 Distilled |T> Ancillas").changed()
+                    {
+                        self.arena.reset_stream(self.ws.seed, m);
+                    }
+                }
+            }
+        });
+    }
+
+    fn render_center_workspace(&mut self, ui: &mut Ui) {
+        let m = self.ws.active_module;
+        ScrollArea::vertical().show(ui, |ui| {
+            ui.monospace(m.key_equation());
+            ui.separator();
+
+            match m {
+                ModuleId::I1DoubleSlit => {
+                    draw_phosphor_screen(ui, &self.arena.i1_hits, 195.0, "2D Single-Quantum Phosphor Detector Screen (Dot-by-Dot Arrival)");
+                    let tot = self.arena.i1_bins.iter().sum::<u64>().max(1) as f64;
+                    let probs: Vec<f64> = self.arena.i1_bins.iter().map(|&c| (c as f64) / tot).collect();
+                    let labels: Vec<String> = (0..probs.len()).map(|i| format!("{}", (i as i32) - 32)).collect();
+                    draw_amplitude_phase_bars(ui, &labels, &probs, None, 205.0, "Accumulating Screen Intensity Profile I(x)");
+                }
+                ModuleId::I2MachZehnder => {
+                    ui.monospace(format!(
+                        "Port D1 (Bright): {}  |  Port D2 (Dark / Interaction-Free): {}  |  Blocked/Absorbed: {}",
+                        self.arena.i2_counts[0], self.arena.i2_counts[1], self.arena.i2_counts[2]
+                    ));
+                    draw_photon_stream(ui, &self.arena.i2_photons, 2, self.ws.i2_arm_blocker, 175.0, "Mach-Zehnder Upper & Lower Interferometer Arms");
+                    let tot = self.arena.i2_counts.iter().sum::<u64>().max(1) as f64;
+                    let probs = vec![
+                        self.arena.i2_counts[0] as f64 / tot,
+                        self.arena.i2_counts[1] as f64 / tot,
+                        self.arena.i2_counts[2] as f64 / tot,
+                    ];
+                    let labels = vec!["D1 Bright".to_string(), "D2 Dark/IFM".to_string(), "Absorbed".to_string()];
+                    draw_amplitude_phase_bars(ui, &labels, &probs, None, 195.0, "Empirical Mach-Zehnder Port Outcome Ratios");
+                }
+                ModuleId::I3SternGerlach => {
+                    ui.monospace(format!(
+                        "Final SG3(+Z): {}  |  Final SG3(-Z Revived!): {}  |  Filtered at SG1/SG2: {}",
+                        self.arena.i3_counts[0], self.arena.i3_counts[1], self.arena.i3_counts[2]
+                    ));
+                    draw_photon_stream(ui, &self.arena.i3_atoms, 2, self.ws.i3_insert_mid_filter, 175.0, "Sequential Stern-Gerlach Spin-1/2 Atomic Beam (SG1:Z -> SG2:theta -> SG3:Z)");
+                    let pass_tot = (self.arena.i3_counts[0] + self.arena.i3_counts[1]).max(1) as f64;
+                    let probs = vec![self.arena.i3_counts[0] as f64 / pass_tot, self.arena.i3_counts[1] as f64 / pass_tot];
+                    let labels = vec!["|+Z⟩ Out".to_string(), "|-Z⟩ Revived".to_string()];
+                    draw_amplitude_phase_bars(ui, &labels, &probs, None, 190.0, "SG3 Output Spin Fractions");
+                }
+                ModuleId::I4QuantumZeno => {
+                    let tot = (self.arena.i4_transmitted + self.arena.i4_absorbed).max(1) as f64;
+                    let th_surv = (PI / (2.0 * (self.ws.i4_stages_n as f64))).cos().powi(2 * (self.ws.i4_stages_n as i32)) * 100.0;
+                    ui.monospace(format!(
+                        "Stages N = {}  |  Empirical Survival = {:.1}%  |  Zeno Theory cos^(2N)(pi/2N) = {:.1}%",
+                        self.ws.i4_stages_n,
+                        (self.arena.i4_transmitted as f64) * 100.0 / tot,
+                        th_surv
+                    ));
+                    let t0 = self.arena.i4_trace.front().map(|x| x.0).unwrap_or(0.0);
+                    let t1 = (t0 + 0.1).max(self.arena.sim_time);
+                    let pts: Vec<(f64, f64)> = self.arena.i4_trace.iter().copied().collect();
+                    draw_scientific_plot(
+                        ui,
+                        "Quantum Zeno Polarization Survival (%) Across N Intermediate Projective Polarizers",
+                        "t",
+                        "Survival (%)",
+                        (t0, t1),
+                        (0.0, 102.0),
+                        &[PlotSeries { label: "Empirical Survival (%)", points: &pts, color: Color32::from_rgb(56, 189, 248) }],
+                        &[PlotHThreshold { y: th_surv, label: "Analytical Zeno Limit", color: Color32::from_rgb(52, 211, 153) }],
+                        230.0,
+                    );
+                }
+                ModuleId::Q1BlochSingleQubit => {
+                    let mean = self.arena.q1_trace_xyz.back().map(|x| x.1).unwrap_or([0.0, 0.0, 1.0]);
+                    draw_bloch_sphere_cloud(ui, Vec2::new(ui.available_width().min(420.0), 285.0), mean, None, &self.arena.q1_walkers, &mut self.bloch_yaw, &mut self.bloch_pitch, "Stochastic Rabi & Quantum-Jump Bloch Cloud");
+                    let t_min = self.arena.q1_trace_xyz.front().map(|p| p.0).unwrap_or(0.0);
+                    let t_max = (t_min + 0.1).max(self.arena.sim_time);
+                    let x_pts: Vec<(f64, f64)> = self.arena.q1_trace_xyz.iter().map(|&(t, b)| (t, b[0])).collect();
+                    let y_pts: Vec<(f64, f64)> = self.arena.q1_trace_xyz.iter().map(|&(t, b)| (t, b[1])).collect();
+                    let z_pts: Vec<(f64, f64)> = self.arena.q1_trace_xyz.iter().map(|&(t, b)| (t, b[2])).collect();
+                    draw_scientific_plot(ui, "Live Ensemble (<X>, <Y>, <Z>)", "t", "<sigma>", (t_min, t_max), (-1.05, 1.05), &[
+                        PlotSeries { label: "<X>", points: &x_pts, color: Color32::from_rgb(56, 189, 248) },
+                        PlotSeries { label: "<Y>", points: &y_pts, color: Color32::from_rgb(52, 211, 153) },
+                        PlotSeries { label: "<Z>", points: &z_pts, color: Color32::from_rgb(251, 191, 36) },
+                    ], &[], 190.0);
+                }
+                ModuleId::Q2CircuitEntanglement => {
+                    draw_circuit_diagram(ui, &self.ws.q2_circuit, self.ws.q2_step_cursor, &self.arena.q2_fault_sparks, 185.0);
+                    let tot = self.arena.q2_shot_counts.iter().sum::<u64>().max(1) as f64;
+                    let probs: Vec<f64> = self.arena.q2_shot_counts.iter().map(|&c| (c as f64) / tot).collect();
+                    let n = self.ws.q2_circuit.num_qubits;
+                    let labels: Vec<String> = (0..probs.len()).map(|i| format!("|{:0w$b}⟩", i, w = n)).collect();
+                    draw_amplitude_phase_bars(ui, &labels, &probs, None, 210.0, "Accumulating Empirical Born-Rule Shot Histogram");
+                }
+                ModuleId::Q3Teleportation => {
+                    let src = [self.ws.q3_theta.sin() * self.ws.q3_phi.cos(), self.ws.q3_theta.sin() * self.ws.q3_phi.sin(), self.ws.q3_theta.cos()];
+                    let cloud: Vec<[f64; 3]> = self.arena.q3_bob_cloud.iter().copied().collect();
+                    let mean = if cloud.is_empty() { src } else {
+                        let inv = 1.0 / (cloud.len() as f64);
+                        [cloud.iter().map(|b| b[0]).sum::<f64>() * inv, cloud.iter().map(|b| b[1]).sum::<f64>() * inv, cloud.iter().map(|b| b[2]).sum::<f64>() * inv]
+                    };
+                    draw_bloch_sphere_cloud(ui, Vec2::new(ui.available_width().min(420.0), 305.0), mean, Some((src, "Alice Target")), &cloud, &mut self.bloch_yaw, &mut self.bloch_pitch, "Bob Teleported Ensemble vs. Alice Source");
+                }
+                ModuleId::Q4OpenSystemsQec => {
+                    let inv = 1.0 / (self.arena.q4_walkers.len() as f64);
+                    let mean = [
+                        self.arena.q4_walkers.iter().map(|b| b[0]).sum::<f64>() * inv,
+                        self.arena.q4_walkers.iter().map(|b| b[1]).sum::<f64>() * inv,
+                        self.arena.q4_walkers.iter().map(|b| b[2]).sum::<f64>() * inv,
+                    ];
+                    draw_bloch_sphere_cloud(ui, Vec2::new(ui.available_width().min(390.0), 255.0), mean, None, &self.arena.q4_walkers, &mut self.bloch_yaw, &mut self.bloch_pitch, "Monte-Carlo Open-System Walker Cloud");
+                    let t0 = self.arena.q4_survival_history.front().map(|x| x.0).unwrap_or(0.0);
+                    let t1 = (t0 + 0.1).max(self.arena.sim_time);
+                    let u_pts: Vec<(f64, f64)> = self.arena.q4_survival_history.iter().map(|&(t, u, _)| (t, u)).collect();
+                    let c_pts: Vec<(f64, f64)> = self.arena.q4_survival_history.iter().map(|&(t, _, c)| (t, c)).collect();
+                    draw_scientific_plot(ui, "Live Stabilizer Survival: 3-Qubit QEC vs. Unencoded", "t", "Survival", (t0, t1), (0.0, 1.05), &[
+                        PlotSeries { label: "Unencoded", points: &u_pts, color: Color32::from_rgb(251, 113, 133) },
+                        PlotSeries { label: "3-Qubit QEC", points: &c_pts, color: Color32::from_rgb(52, 211, 153) },
+                    ], &[], 190.0);
+                }
+                ModuleId::D1QuditWeylLab => {
+                    let d = self.ws.d1_dimension_d;
+                    draw_photon_stream(ui, &self.arena.d1_pulses, d, false, 165.0, "High-Dimensional Optical Rail / OAM Stream");
+                    let rep = run_qudit_lab(d, QuditPreset::BellMaximallyEntangledPair, self.ws.d1_shift_a, 0);
+                    let tot = self.arena.d1_coincidences.iter().sum::<u64>().max(1) as f64;
+                    let probs: Vec<f64> = self.arena.d1_coincidences.iter().map(|&c| (c as f64) / tot).collect();
+                    draw_amplitude_phase_bars(ui, &rep.basis_labels, &probs, Some(&rep.phases_rad), 205.0, "Live Empirical 2-Qudit Coincidence Distribution");
+                }
+                ModuleId::K1Bb84Qkd => {
+                    draw_photon_stream(ui, &self.arena.qkd_photons, 2, self.ws.k1_eve_rate > 0.01, 150.0, "Live BB84 Polarized Photon Stream (+ / x)");
+                    let t0 = self.arena.k1_qber_trace.front().map(|x| x.0).unwrap_or(0.0);
+                    let t1 = (t0 + 0.1).max(self.arena.sim_time);
+                    let q_pts: Vec<(f64, f64)> = self.arena.k1_qber_trace.iter().copied().collect();
+                    draw_scientific_plot(ui, "Running Empirical QBER(t) (%) vs. 11.0% Abort Bound", "t", "QBER (%)", (t0, t1), (0.0, 32.0), &[
+                        PlotSeries { label: "Running QBER (%)", points: &q_pts, color: Color32::from_rgb(251, 113, 133) },
+                    ], &[PlotHThreshold { y: 11.0, label: "11.0% Abort Threshold", color: Color32::from_rgb(251, 191, 36) }], 205.0);
+                }
+                ModuleId::K2E91BellChsh => {
+                    let t0 = self.arena.k2_chsh_trace.front().map(|x| x.0).unwrap_or(0.0);
+                    let t1 = (t0 + 0.1).max(self.arena.sim_time);
+                    let s_pts: Vec<(f64, f64)> = self.arena.k2_chsh_trace.iter().copied().collect();
+                    draw_scientific_plot(ui, "Live Empirical CHSH |S(t)| Estimator", "t", "|S|", (t0, t1), (1.0, 3.0), &[
+                        PlotSeries { label: "CHSH |S(t)|", points: &s_pts, color: Color32::from_rgb(56, 189, 248) },
+                    ], &[
+                        PlotHThreshold { y: 2.8284, label: "Tsirelson 2*sqrt(2)", color: Color32::from_rgb(52, 211, 153) },
+                        PlotHThreshold { y: 2.0, label: "Classical Bell Bound 2.0", color: Color32::from_rgb(251, 113, 133) },
+                    ], 235.0);
+                }
+                ModuleId::K3B92NonOrthogonal => {
+                    let t0 = self.arena.k3_yield_trace.front().map(|x| x.0).unwrap_or(0.0);
+                    let t1 = (t0 + 0.1).max(self.arena.sim_time);
+                    let y_pts: Vec<(f64, f64)> = self.arena.k3_yield_trace.iter().copied().collect();
+                    draw_scientific_plot(ui, "Live B92 Conclusive Sifting Yield (%)", "t", "Yield (%)", (t0, t1), (0.0, 60.0), &[
+                        PlotSeries { label: "Conclusive Sift (%)", points: &y_pts, color: Color32::from_rgb(56, 189, 248) },
+                    ], &[], 225.0);
+                }
+                ModuleId::C1ShorRsa => {
+                    ui.monospace(format!("Shots: {}  |  Locked Period r: {:?}  |  Factors: {:?}", self.arena.total_events, self.arena.c1_locked_r, self.arena.c1_locked_factors));
+                    let tot = self.arena.c1_bin_counts.iter().sum::<u64>().max(1) as f64;
+                    let probs: Vec<f64> = self.arena.c1_bin_counts.iter().map(|&c| (c as f64) / tot).collect();
+                    let labels: Vec<String> = (0..probs.len()).map(|i| format!("{}", i * 4)).collect();
+                    draw_amplitude_phase_bars(ui, &labels, &probs, None, 225.0, "Empirical Inverse-QFT Resonance Peaks Emerging Shot-by-Shot");
+                }
+                ModuleId::C2GroverSymmetric => {
+                    let rep = run_grover_key_search(self.ws.c2_key_bits, self.ws.c2_secret_key, self.arena.c2_live_iter);
+                    let cap = rep.state_probabilities.len().min(64);
+                    let labels: Vec<String> = (0..cap).map(|i| format!("k{}", i)).collect();
+                    draw_amplitude_phase_bars(ui, &labels, &rep.state_probabilities[..cap], None, 225.0, "Live Grover Wavepacket Surge & Over-Rotation Cycle");
+                }
+                ModuleId::C3MlKemLattice => {
+                    let rep = run_ml_kem_lab(self.ws.c3_profile, self.ws.c3_eta, self.ws.seed);
+                    let t0 = self.arena.c3_max_noise_history.front().map(|x| x.0).unwrap_or(0.0);
+                    let t1 = (t0 + 0.1).max(self.arena.sim_time);
+                    let n_pts: Vec<(f64, f64)> = self.arena.c3_max_noise_history.iter().copied().collect();
+                    draw_scientific_plot(ui, "Live Max Decapsulation Noise |e_dec| vs. q/4 = 832", "t", "Max |e_dec|", (t0, t1), (0.0, 1100.0), &[
+                        PlotSeries { label: "Max |e_dec|", points: &n_pts, color: Color32::from_rgb(56, 189, 248) },
+                    ], &[PlotHThreshold { y: 832.0, label: "q/4 = 832 Failure Bound", color: Color32::from_rgb(251, 113, 133) }], 190.0);
+                    let cloud: Vec<[f64; 2]> = self.arena.c3_lwe_cloud.iter().copied().collect();
+                    draw_lattice_2d_cloud(ui, &rep.lattice_2d_points, rep.lattice_basis_b1, rep.lattice_basis_b2, rep.lattice_2d_exact_target, &cloud, Vec2::new(ui.available_width().max(340.0), 220.0));
+                }
+                ModuleId::C4PqcSignatures => {
+                    let max_c = self.arena.c4_raw_bins.iter().copied().max().unwrap_or(10).max(10) as f64 * 1.15;
+                    let raw_pts: Vec<(f64, f64)> = self.arena.c4_raw_bins.iter().enumerate().map(|(i, &c)| (i as f64, c as f64)).collect();
+                    let acc_pts: Vec<(f64, f64)> = self.arena.c4_acc_bins.iter().enumerate().map(|(i, &c)| (i as f64, c as f64)).collect();
+                    draw_scientific_plot(ui, "Accumulating FIPS 204 z = y + c*s: Raw Tails vs. Accepted Box", "Bin", "Count", (0.0, 20.0), (0.0, max_c), &[
+                        PlotSeries { label: "Raw z = y + c*s", points: &raw_pts, color: Color32::from_rgb(251, 113, 133) },
+                        PlotSeries { label: "Accepted Box", points: &acc_pts, color: Color32::from_rgb(52, 211, 153) },
+                    ], &[], 230.0);
+                }
+                ModuleId::A1SurfaceCode => {
+                    let d = self.ws.a1_code_distance;
+                    ui.horizontal(|ui| {
+                        draw_surface_code_grid(ui, d, &self.arena.a1_data_errors, 230.0);
+                        ui.vertical(|ui| {
+                            ui.monospace(format!("Physical Error p = {:.2}% (Threshold ~ 1.00%)", self.ws.a1_phys_error * 100.0));
+                            ui.monospace(format!("d=3 Survival: {:.1}%", self.arena.a1_surv_d3 * 100.0));
+                            ui.monospace(format!("d=5 Survival: {:.1}%", self.arena.a1_surv_d5 * 100.0));
+                            ui.monospace(format!("d=7 Survival: {:.1}%", self.arena.a1_surv_d7 * 100.0));
+                        });
+                    });
+                    let t0 = self.arena.a1_trace.front().map(|x| x.0).unwrap_or(0.0);
+                    let t1 = (t0 + 0.1).max(self.arena.sim_time);
+                    let s3: Vec<(f64, f64)> = self.arena.a1_trace.iter().map(|&(t, a, _, _)| (t, a)).collect();
+                    let s5: Vec<(f64, f64)> = self.arena.a1_trace.iter().map(|&(t, _, b, _)| (t, b)).collect();
+                    let s7: Vec<(f64, f64)> = self.arena.a1_trace.iter().map(|&(t, _, _, c)| (t, c)).collect();
+                    draw_scientific_plot(ui, "Surface-Code Distance Scaling (Below p_th ~ 1%, d=7 Beats d=3; Above 1%, Crossover Reverses!)", "t", "Logical Survival", (t0, t1), (0.0, 1.05), &[
+                        PlotSeries { label: "d = 3", points: &s3, color: Color32::from_rgb(251, 191, 36) },
+                        PlotSeries { label: "d = 5", points: &s5, color: Color32::from_rgb(56, 189, 248) },
+                        PlotSeries { label: "d = 7", points: &s7, color: Color32::from_rgb(52, 211, 153) },
+                    ], &[], 195.0);
+                }
+                ModuleId::A2VqeHydrogen => {
+                    let (fci, e_cur) = h2_fci_and_ansatz_energy(self.ws.a2_bond_r_angstrom, self.arena.a2_theta);
+                    ui.monospace(format!(
+                        "R = {:.2} A  |  Ansatz theta = {:+.3} rad  |  VQE E = {:.4} Ha  |  Exact FCI = {:.4} Ha (Delta = {:.2} mHa)",
+                        self.ws.a2_bond_r_angstrom, self.arena.a2_theta, e_cur, fci, (e_cur - fci) * 1000.0
+                    ));
+                    let t0 = self.arena.a2_energy_trace.front().map(|x| x.0).unwrap_or(0.0);
+                    let t1 = (t0 + 0.1).max(self.arena.sim_time);
+                    let v_pts: Vec<(f64, f64)> = self.arena.a2_energy_trace.iter().map(|&(t, ev, _)| (t, ev)).collect();
+                    draw_scientific_plot(ui, "Live Shot-Noise SPSA VQE Descent Toward Molecular H2 FCI Ground State (Ha)", "t", "Energy (Ha)", (t0, t1), (-1.20, -0.20), &[
+                        PlotSeries { label: "VQE Ansatz E(t)", points: &v_pts, color: Color32::from_rgb(56, 189, 248) },
+                    ], &[PlotHThreshold { y: fci, label: "Exact STO-3G FCI Ground Energy", color: Color32::from_rgb(52, 211, 153) }], 225.0);
+                }
+                ModuleId::A3QaoaMaxCut => {
+                    ui.horizontal(|ui| {
+                        draw_qaoa_ring_graph(ui, self.arena.a3_last_mask, 220.0);
+                        let tot = self.arena.a3_cut_bins.iter().sum::<u64>().max(1) as f64;
+                        let probs: Vec<f64> = self.arena.a3_cut_bins.iter().map(|&c| (c as f64) / tot).collect();
+                        let labels: Vec<String> = (0..10).map(|c| format!("C={}", c)).collect();
+                        draw_amplitude_phase_bars(ui, &labels, &probs, None, 220.0, "Sampled Cut-Value Distribution (Max-Cut = 10)");
+                    });
+                    let t0 = self.arena.a3_ratio_trace.front().map(|x| x.0).unwrap_or(0.0);
+                    let t1 = (t0 + 0.1).max(self.arena.sim_time);
+                    let r_pts: Vec<(f64, f64)> = self.arena.a3_ratio_trace.iter().copied().collect();
+                    draw_scientific_plot(ui, "Running QAOA Approximation Ratio <C> / C_max", "t", "Ratio", (t0, t1), (0.4, 1.02), &[
+                        PlotSeries { label: "<C> / C_max", points: &r_pts, color: Color32::from_rgb(52, 211, 153) },
+                    ], &[PlotHThreshold { y: 0.6924, label: "Goemans-Williamson / p=1 Reference 0.692", color: Color32::from_rgb(251, 191, 36) }], 185.0);
+                }
+                ModuleId::A4MagicStateFactory => {
+                    let p_in = self.ws.a4_raw_t_error;
+                    let th_out = 35.0 * p_in.powi(3) * 100.0;
+                    ui.monospace(format!(
+                        "15-Qubit Batches: {}  |  Purified |T⟩: {}  |  Syndrome Aborts: {}  |  Cubic 35*p_in^3 = {:.4}%",
+                        self.arena.a4_batches, self.arena.a4_distilled_ok, self.arena.a4_aborted_blocks, th_out
+                    ));
+                    let t0 = self.arena.a4_err_trace.front().map(|x| x.0).unwrap_or(0.0);
+                    let t1 = (t0 + 0.1).max(self.arena.sim_time);
+                    let e_pts: Vec<(f64, f64)> = self.arena.a4_err_trace.iter().copied().collect();
+                    draw_scientific_plot(ui, "Distilled |T> Output Infidelity (%) vs. Raw Input Error p_in (%)", "t", "Error (%)", (t0, t1), (0.0, (p_in * 120.0).max(2.0)), &[
+                        PlotSeries { label: "Distilled p_out (%)", points: &e_pts, color: Color32::from_rgb(52, 211, 153) },
+                    ], &[PlotHThreshold { y: p_in * 100.0, label: "Raw Unpurified Input p_in (%)", color: Color32::from_rgb(251, 113, 133) }], 225.0);
+                }
+                ModuleId::Q5EntanglementSwapping => {
+                    let rate = if self.arena.q5_trials > 0 {
+                        (self.arena.q5_heralded as f64) * 100.0 / (self.arena.q5_trials as f64)
+                    } else {
+                        0.0
+                    };
+                    ui.monospace(format!(
+                        "Repeater Hops: {}  |  Trials: {}  |  Heralded End-to-End Pairs: {} ({:.1}%)",
+                        self.ws.q5_repeater_hops, self.arena.q5_trials, self.arena.q5_heralded, rate
+                    ));
+                    draw_repeater_chain(ui, self.ws.q5_repeater_hops, &self.arena.q5_swap_flags, (self.arena.sim_time * 1.4) as f32, 175.0);
+                    let t0 = self.arena.q5_fid_trace.front().map(|x| x.0).unwrap_or(0.0);
+                    let t1 = (t0 + 0.1).max(self.arena.sim_time);
+                    let f_pts: Vec<(f64, f64)> = self.arena.q5_fid_trace.iter().copied().collect();
+                    draw_scientific_plot(ui, "Heralded End-to-End Bell Fidelity F(t) vs. Entanglement Bound (0.50)", "t", "Fidelity", (t0, t1), (0.20, 1.05), &[
+                        PlotSeries { label: "Swapped Bell Fidelity", points: &f_pts, color: Color32::from_rgb(52, 211, 153) },
+                    ], &[PlotHThreshold { y: 0.50, label: "Separability Witness 0.50", color: Color32::from_rgb(251, 113, 133) }], 205.0);
+                }
+                ModuleId::D2QuditTeleportation => {
+                    let d = self.ws.d2_dimension_d.clamp(2, 8);
+                    let cls_lim = 2.0 / ((d + 1) as f64);
+                    let sub_lim = ((d - 1) as f64) / (d as f64);
+                    let emp_f = if self.arena.d2_shots > 0 {
+                        self.arena.d2_fid_sum / (self.arena.d2_shots as f64)
+                    } else {
+                        1.0
+                    };
+                    ui.monospace(format!(
+                        "d = {} ({}^2 = {} Bell states)  |  Last (m,n) = {:?}  |  F_avg = {:.3} (Classical = {:.3}, (d-1)/d = {:.3})",
+                        d, d, d * d, self.arena.d2_last_mn, emp_f, cls_lim, sub_lim
+                    ));
+                    let tot = self.arena.d2_bob_counts.iter().sum::<u64>().max(1) as f64;
+                    let probs: Vec<f64> = self.arena.d2_bob_counts.iter().map(|&c| (c as f64) / tot).collect();
+                    let labels: Vec<String> = (0..d).map(|k| format!("|{}⟩", k)).collect();
+                    draw_amplitude_phase_bars(ui, &labels, &probs, None, 195.0, "Bob Reconstructed d-Mode Intensity Profile After Weyl Z_d^m X_d^n");
+                    let t0 = self.arena.d2_fid_trace.front().map(|x| x.0).unwrap_or(0.0);
+                    let t1 = (t0 + 0.1).max(self.arena.sim_time);
+                    let f_pts: Vec<(f64, f64)> = self.arena.d2_fid_trace.iter().copied().collect();
+                    draw_scientific_plot(ui, "Average d-Dimensional Teleportation Fidelity vs. Dimensionality Witnesses", "t", "F_avg", (t0, t1), (0.0, 1.05), &[
+                        PlotSeries { label: "Empirical F_avg(t)", points: &f_pts, color: Color32::from_rgb(56, 189, 248) },
+                    ], &[
+                        PlotHThreshold { y: sub_lim, label: "(d-1)-Dim Subspace Bound", color: Color32::from_rgb(251, 191, 36) },
+                        PlotHThreshold { y: cls_lim, label: "Classical 2/(d+1) Bound", color: Color32::from_rgb(251, 113, 133) },
+                    ], 185.0);
+                }
+                ModuleId::A5GateTeleportation => {
+                    let target_phi = (self.ws.a5_chain_depth as f64) * (PI * 0.25);
+                    let target_vec = [target_phi.cos(), target_phi.sin(), 0.0];
+                    let cloud: Vec<[f64; 3]> = self.arena.a5_cloud.iter().copied().collect();
+                    let mean = if cloud.is_empty() {
+                        target_vec
+                    } else {
+                        let inv = 1.0 / (cloud.len() as f64);
+                        [
+                            cloud.iter().map(|b| b[0]).sum::<f64>() * inv,
+                            cloud.iter().map(|b| b[1]).sum::<f64>() * inv,
+                            cloud.iter().map(|b| b[2]).sum::<f64>() * inv,
+                        ]
+                    };
+                    let fix_pct = if self.arena.a5_total_gadgets > 0 {
+                        (self.arena.a5_s_fixups as f64) * 100.0 / (self.arena.a5_total_gadgets as f64)
+                    } else {
+                        50.0
+                    };
+                    ui.monospace(format!(
+                        "Chained T^{} Gadgets: {}  |  Clifford S^1 Fixups: {:.1}%  |  Ancilla Mode: {}",
+                        self.ws.a5_chain_depth,
+                        self.arena.a5_total_gadgets,
+                        fix_pct,
+                        if self.ws.a5_use_distilled { "A4 15-to-1 Distilled |T⟩" } else { "Raw Unpurified |T⟩" }
+                    ));
+                    draw_bloch_sphere_cloud(ui, Vec2::new(ui.available_width().min(400.0), 255.0), mean, Some((target_vec, "Ideal T^N|+⟩")), &cloud, &mut self.bloch_yaw, &mut self.bloch_pitch, "Teleported T^N Bloch Equator Cloud vs. Ideal Octant");
+                    let t0 = self.arena.a5_fid_trace.front().map(|x| x.0).unwrap_or(0.0);
+                    let t1 = (t0 + 0.1).max(self.arena.sim_time);
+                    let act_pts: Vec<(f64, f64)> = self.arena.a5_fid_trace.iter().map(|&(t, f, _)| (t, f)).collect();
+                    let raw_ref = self.arena.a5_fid_trace.back().map(|x| x.2).unwrap_or(0.8);
+                    draw_scientific_plot(ui, "Chained Gate-Teleportation Sequence Fidelity F(T^N)", "t", "Fidelity", (t0, t1), (0.35, 1.05), &[
+                        PlotSeries { label: "Teleported T^N Fidelity", points: &act_pts, color: Color32::from_rgb(52, 211, 153) },
+                    ], &[PlotHThreshold { y: raw_ref, label: "Unpurified Raw |T> Baseline", color: Color32::from_rgb(251, 113, 133) }], 180.0);
+                }
+            }
+        });
+    }
+
+    fn render_modals(&mut self, ctx: &egui::Context) {
+        if self.show_workset_modal {
+            let mut open = self.show_workset_modal;
+            egui::Window::new("Preset Slots (SQLite WAL) & Portable JSON").open(&mut open).resizable(true).default_width(500.0).show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Slot:");
+                    ui.text_edit_singleline(&mut self.slot_name_input);
+                    if ui.button("Save").clicked() {
+                        if let Some(repo) = &self.repo { let _ = repo.save_slot(self.slot_name_input.trim(), &self.ws); }
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.text_edit_singleline(&mut self.json_path_input);
+                    if ui.button("Export JSON").clicked() {
+                        let p = PathBuf::from(self.json_path_input.trim());
+                        let _ = PortableWorksetEnvelope::pack("preset", &self.ws).and_then(|e| e.save_to_path(&p));
+                    }
+                    if ui.button("Import JSON").clicked() {
+                        let p = PathBuf::from(self.json_path_input.trim());
+                        if let Ok((_, st)) = PortableWorksetEnvelope::load_from_path(&p) {
+                            self.ws = st;
+                            self.arena.reset_stream(self.ws.seed, self.ws.active_module);
+                        }
+                    }
+                });
+            });
+            self.show_workset_modal = open;
+        }
+        if self.show_help_modal {
+            let mut open = self.show_help_modal;
+            egui::Window::new("Shortcuts & Primary Literature Citations (23 Modules)").open(&mut open).resizable(true).default_width(600.0).show(ctx, |ui| {
+                ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
+                    ui.monospace("Space : Play / Pause  |  R : Reset Stream  |  F5/F9 : Save/Load  |  Esc : Hub");
+                    ui.separator();
+                    for m in ModuleId::ALL {
+                        let (lbl, url) = m.citation();
+                        ui.hyperlink_to(format!("[{}] {}", m.code(), lbl), url);
+                    }
+                });
+            });
+            self.show_help_modal = open;
+        }
+    }
+}
+
+impl eframe::App for QuantaCryptApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.set_visuals(egui::Visuals::dark());
+        if ctx.input(|i| i.key_pressed(egui::Key::Space)) { self.arena.playing = !self.arena.playing; }
+        if ctx.input(|i| i.key_pressed(egui::Key::R)) { self.arena.reset_stream(self.ws.seed, self.ws.active_module); }
+        if ctx.input(|i| i.key_pressed(egui::Key::F1)) { self.show_help_modal = !self.show_help_modal; }
+        if ctx.input(|i| i.key_pressed(egui::Key::F5)) { self.quick_save(); }
+        if ctx.input(|i| i.key_pressed(egui::Key::F9)) { self.quick_load(); }
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) { self.stage = AppStage::CurriculumHub; }
+
+        let dt = ctx.input(|i| i.unstable_dt) as f64;
+        if self.stage == AppStage::ModuleWorkspace {
+            self.arena.step(dt, &self.ws);
+            if self.arena.playing { ctx.request_repaint(); }
+        }
+        self.render_top_menu(ctx);
+        egui::TopBottomPanel::bottom("quantacrypt_statusbar").show(ctx, |ui| { ui.monospace(&self.status_banner); });
+        match self.stage {
+            AppStage::CurriculumHub => { egui::CentralPanel::default().show(ctx, |ui| { self.render_hub(ui); }); }
+            AppStage::ModuleWorkspace => {
+                egui::SidePanel::left("quantacrypt_left_panel").resizable(true).default_width(310.0).show(ctx, |ui| { self.render_left_controls(ui); });
+                egui::CentralPanel::default().show(ctx, |ui| { self.render_center_workspace(ui); });
+            }
+        }
+        self.render_modals(ctx);
+    }
+}

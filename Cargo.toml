@@ -1,0 +1,23 @@
+[package]
+name = "quantacrypt-studio"
+version = "2.2.0"
+edition = "2021"
+authors = ["Bryan P. White <crvscience>"]
+description = "Native safe-Rust 23-module passive stochastic quantum simulator spanning basic quantum intuition (double-slit, Mach-Zehnder, Stern-Gerlach, Zeno), qubit circuits & decoherence, qudits, photonic QKD, PQC, and advanced fault-tolerant/variational quantum computing (surface codes, VQE, QAOA, magic-state distillation)."
+license = "MIT"
+readme = "README.md"
+
+[lib]
+name = "quantacrypt_studio"
+path = "src/lib.rs"
+
+[[bin]]
+name = "quantacrypt-studio"
+path = "src/main.rs"
+
+[dependencies]
+eframe = "0.31"
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rusqlite = { version = "0.32", features = ["bundled"] }

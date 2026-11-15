@@ -1,0 +1,3121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>QuantaCrypt Studio v2.0.0 — Passive Stochastic Quantum &amp; Cryptography Observatory</title>
+<style>
+  :root {
+    --bg-app: #0a0e17;
+    --bg-bar: #101725;
+    --bg-panel: #131b2b;
+    --bg-card: #172236;
+    --bg-canvas: #0d1421;
+    --border: #273650;
+    --border-bright: #3d557d;
+    --text-main: #e6eef8;
+    --text-muted: #92a5c2;
+    --cyan: #38bdf8;
+    --emerald: #34d399;
+    --amber: #fbbf24;
+    --rose: #fb7185;
+    --violet: #a78bfa;
+    --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg-app);
+    color: var(--text-main);
+    font-family: var(--font-sans);
+    font-size: 13.5px;
+    line-height: 1.45;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  a { color: var(--cyan); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  button, select, input { font-family: inherit; color: var(--text-main); }
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 14px;
+    background: var(--bg-bar);
+    border-bottom: 1px solid var(--border);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    color: var(--cyan);
+    white-space: nowrap;
+  }
+  .brand-badge {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: rgba(52, 211, 153, 0.14);
+    border: 1px solid rgba(52, 211, 153, 0.4);
+    color: var(--emerald);
+  }
+  .nav-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+  }
+  .btn {
+    cursor: pointer;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 500;
+    transition: background 0.14s, border-color 0.14s;
+  }
+  .btn:hover { background: #21304a; border-color: var(--border-bright); }
+  .btn-active {
+    background: rgba(56, 189, 248, 0.19);
+    border-color: var(--cyan);
+    color: #ffffff;
+  }
+  .btn-emerald {
+    background: rgba(52, 211, 153, 0.16);
+    border-color: rgba(52, 211, 153, 0.55);
+    color: var(--emerald);
+  }
+  .btn-amber {
+    background: rgba(251, 191, 36, 0.15);
+    border-color: rgba(251, 191, 36, 0.5);
+    color: var(--amber);
+  }
+  .mod-select {
+    background: var(--bg-card);
+    border: 1px solid var(--border-bright);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 12.5px;
+    max-width: 245px;
+  }
+  .telemetry-pill {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--emerald);
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(52, 211, 153, 0.11);
+    border: 1px solid rgba(52, 211, 153, 0.35);
+    white-space: nowrap;
+  }
+  .main-shell {
+    display: grid;
+    grid-template-columns: 325px minmax(0, 1fr);
+    min-height: calc(100vh - 82px);
+  }
+  @media (max-width: 900px) {
+    .main-shell { grid-template-columns: 1fr; }
+  }
+  .left-dock {
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  @media (max-width: 900px) {
+    .left-dock { border-right: none; border-bottom: 1px solid var(--border); }
+  }
+  .center-pane {
+    padding: 14px 16px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    min-width: 0;
+  }
+  .hub-container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 18px 16px 36px;
+  }
+  .hub-group-title {
+    color: var(--violet);
+    font-size: 15px;
+    font-weight: 700;
+    margin: 18px 0 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .hub-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(285px, 1fr));
+    gap: 12px;
+  }
+  .hub-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .eq-banner {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--bg-canvas);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 10px;
+    color: #c6d7f0;
+    overflow-x: auto;
+  }
+  .card-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 11px 12px;
+  }
+  .ctrl-group { display: flex; flex-direction: column; gap: 9px; }
+  .ctrl-row { display: flex; flex-direction: column; gap: 3px; }
+  .ctrl-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .ctrl-val { font-family: var(--font-mono); color: var(--cyan); }
+  input[type="range"] { width: 100%; accent-color: var(--cyan); cursor: pointer; }
+  .pill-row { display: flex; flex-wrap: wrap; gap: 5px; }
+  .viz-grid-2 {
+    display: grid;
+    grid-template-columns: minmax(270px, 380px) minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+  }
+  @media (max-width: 760px) {
+    .viz-grid-2 { grid-template-columns: 1fr; }
+  }
+  .canvas-frame {
+    background: var(--bg-canvas);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px;
+    position: relative;
+  }
+  .canvas-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-main);
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .canvas-sub { font-family: var(--font-mono); font-size: 11px; color: var(--amber); }
+  canvas.viz-canvas { width: 100%; display: block; border-radius: 4px; }
+  .kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
+  }
+  .kpi-tile {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 8px 10px;
+  }
+  .kpi-name { font-size: 11px; color: var(--text-muted); }
+  .kpi-num {
+    font-family: var(--font-mono);
+    font-size: 14.5px;
+    font-weight: 700;
+    color: var(--text-main);
+    margin-top: 2px;
+    word-break: break-all;
+  }
+  .bit-tape {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    min-height: 24px;
+    align-items: center;
+  }
+  .bit-chip {
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: rgba(52, 211, 153, 0.14);
+    border: 1px solid rgba(52, 211, 153, 0.4);
+    color: var(--emerald);
+  }
+  .bit-chip.err {
+    background: rgba(251, 113, 133, 0.18);
+    border-color: rgba(251, 113, 133, 0.55);
+    color: var(--rose);
+  }
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .data-table th, .data-table td {
+    padding: 5px 8px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+  }
+  .statusbar {
+    position: sticky;
+    bottom: 0;
+    z-index: 25;
+    background: var(--bg-bar);
+    border-top: 1px solid var(--border);
+    padding: 6px 14px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-muted);
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(5, 8, 14, 0.76);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal-panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-bright);
+    border-radius: 10px;
+    max-width: 680px;
+    width: 100%;
+    max-height: 86vh;
+    overflow-y: auto;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span>QuantaCrypt Studio</span>
+    <span class="brand-badge">v2.2 · 23-Module Observatory</span>
+  </div>
+  <div class="nav-strip">
+    <button type="button" class="btn" id="btn-toggle-hub" data-action="toggle-hub">⊞ Curriculum Hub</button>
+    <button type="button" class="btn" data-action="pick-mod" data-mod="I1">I1 Slits</button>
+    <button type="button" class="btn" data-action="pick-mod" data-mod="Q1">Q1 Bloch</button>
+    <button type="button" class="btn" data-action="pick-mod" data-mod="Q2">Q2 Circuit</button>
+    <button type="button" class="btn" data-action="pick-mod" data-mod="Q3">Q3 Teleport</button>
+    <button type="button" class="btn" data-action="pick-mod" data-mod="Q5">Q5 Swap</button>
+    <button type="button" class="btn" data-action="pick-mod" data-mod="D1">D1 Qudits</button>
+    <button type="button" class="btn" data-action="pick-mod" data-mod="K1">K1 BB84</button>
+    <button type="button" class="btn" data-action="pick-mod" data-mod="K2">K2 E91</button>
+    <button type="button" class="btn" data-action="pick-mod" data-mod="C1">C1 Shor</button>
+    <button type="button" class="btn" data-action="pick-mod" data-mod="C3">C3 ML-KEM</button>
+    <button type="button" class="btn" data-action="pick-mod" data-mod="A1">A1 Surface</button>
+    <select id="module-select" class="mod-select" aria-label="Select Simulation Module"></select>
+  </div>
+  <div class="nav-strip">
+    <button type="button" class="btn btn-emerald" id="btn-play-pause" data-action="play-pause">⏸ Pause</button>
+    <button type="button" class="btn" id="btn-reset-stream" data-action="reset-stream">↻ Reset</button>
+    <select id="speed-select" class="mod-select" aria-label="Simulation Speed" style="width:78px;">
+      <option value="0.5">0.5x</option>
+      <option value="1" selected>1.0x</option>
+      <option value="2">2.0x</option>
+      <option value="4">4.0x</option>
+    </select>
+    <button type="button" class="btn" id="btn-open-worksets" data-action="open-worksets">Worksets (F5/F9)</button>
+    <button type="button" class="btn" id="btn-open-help" data-action="open-help">Citations &amp; Keys (F1)</button>
+    <span class="telemetry-pill" id="live-telemetry-pill">t = 0.0s | 0 events</span>
+  </div>
+</header>
+
+<section id="hub-view" class="hub-container hidden"></section>
+
+<main id="workspace-view" class="main-shell">
+  <aside class="left-dock" id="left-controls"></aside>
+  <section class="center-pane" id="center-stage"></section>
+</main>
+
+<footer class="statusbar">
+  <span id="status-message">Passive Stochastic Stream Active — Tune any parameter on the left and watch the ensemble adapt in real time (Space: Play/Pause, R: Reset).</span>
+  <span id="seed-indicator">RNG Seed: 20261114</span>
+</footer>
+
+<div class="modal-backdrop" id="workset-modal" role="dialog" aria-modal="true">
+  <div class="modal-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <strong>Parameter Presets &amp; Portable SHA-256 JSON (.qworkset.json)</strong>
+      <button type="button" class="btn" data-action="close-modals">✕ Close</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <input type="text" id="slot-name-input" value="session_alpha" style="flex:1;min-width:160px;background:var(--bg-canvas);border:1px solid var(--border);border-radius:6px;padding:6px 8px;" />
+      <button type="button" class="btn btn-emerald" data-action="save-slot">Save Slot</button>
+      <button type="button" class="btn" data-action="quick-save">Quick-Save (F5)</button>
+      <button type="button" class="btn" data-action="quick-load">Quick-Load (F9)</button>
+    </div>
+    <div id="slots-table-wrap"></div>
+    <div style="border-top:1px solid var(--border);padding-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <button type="button" class="btn btn-amber" data-action="export-json">⬇ Download .qworkset.json</button>
+      <label class="btn" style="display:inline-block;">
+        ⬆ Import .qworkset.json
+        <input type="file" id="import-json-input" accept=".json,application/json" style="display:none;" />
+      </label>
+      <button type="button" class="btn" data-action="reset-defaults">Reset Clean Defaults</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="help-modal" role="dialog" aria-modal="true">
+  <div class="modal-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <strong>Keyboard Shortcuts &amp; Primary Literature Citations</strong>
+      <button type="button" class="btn" data-action="close-modals">✕ Close</button>
+    </div>
+    <div class="eq-banner">
+      Space: Play / Pause Stream  |  R: Reset Accumulators  |  F5/F9: Save/Load Preset  |  F1: Citations  |  Esc: Hub
+    </div>
+    <div id="citations-list" style="display:flex;flex-direction:column;gap:7px;font-size:12.5px;"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  "use strict";
+
+  function escHtml(str) {
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  // =========================================================================
+  // 1. Observatory Module Definitions & Verified Citations
+  // =========================================================================
+  const GROUPS = [
+    { id: "G0", title: "0. Basic Quantum Mechanics & Wave-Particle Intro" },
+    { id: "G1", title: "1. Qubit Foundations & Open-System Trajectories" },
+    { id: "G2", title: "2. High-Dimensional Optical Qudits (d >= 2)" },
+    { id: "G3", title: "3. Live Photonic Quantum Key Distribution & Bell Streams" },
+    { id: "G4", title: "4. Stochastic Quantum Cryptanalysis & NIST Post-Quantum Streams" },
+    { id: "G5", title: "5. Advanced Fault-Tolerant & Variational Computing" }
+  ];
+
+  const MODULES = [
+    {
+      code: "I1", group: "G0",
+      title: "Double-Slit Single-Quantum Build-Up & Which-Path Decoherence",
+      summary: "Watch individual quanta strike a phosphor screen dot-by-dot to sculpt Young interference fringes, and slide which-path detector coupling to watch fringes melt into two classical mounds.",
+      equation: "I(x) = I_1(x) + I_2(x) + 2*(1 - eta_path)*sqrt(I_1*I_2)*cos(2*pi*d*x / lambda*L)",
+      refLabel: "Bach, Pope, Liou & Batelaan (2013) Controlled double-slit electron diffraction, New J. Phys. 15, 033018",
+      refUrl: "https://arxiv.org/abs/1210.6243"
+    },
+    {
+      code: "I2", group: "G0",
+      title: "Mach-Zehnder Interferometer & Interaction-Free Detection",
+      summary: "Watch single photons split across upper and lower interferometer arms with phase phi; toggle a lower-arm blocker to witness Elitzur-Vaidman dark-port interaction-free detections.",
+      equation: "Open: P(D1) = cos^2(phi/2), P(D2) = sin^2(phi/2)   |   Blocked (phi=0): Absorb=50%, D1=25%, D2_IFM=25%",
+      refLabel: "Elitzur & Vaidman (1993) Quantum mechanical interaction-free measurements, Found. Phys. 23, 987",
+      refUrl: "https://arxiv.org/abs/hep-th/9305002"
+    },
+    {
+      code: "I3", group: "G0",
+      title: "Stern-Gerlach Sequential Spin-1/2 Beam (Z → θ → Z)",
+      summary: "Stream silver atoms through three sequential magnetic gradients (SG1:Z, SG2:theta, SG3:Z) to watch non-commuting spin projection revive a blocked |-Z⟩ state.",
+      equation: "|+Z⟩ → SG(θ) → |+θ⟩ (cos^2(θ/2)) → SG(Z) revives |-Z⟩ with joint prob (1/4)*sin^2(θ)",
+      refLabel: "Gerlach & Stern (1922) Experimental proof of directional quantization in a magnetic field, arXiv:2301.11343",
+      refUrl: "https://arxiv.org/abs/2301.11343"
+    },
+    {
+      code: "I4", group: "G0",
+      title: "Malus Polarizer Stack & Quantum Zeno Effect",
+      summary: "Send horizontally polarized photons through N tilted polarizers spanning 0° to 90°; watch frequent projective measurements freeze polarization decay via cos^(2N)(pi / 2N).",
+      equation: "P_survive(0° → 90° in N stages) = [cos^2(pi / (2*N))]^N  -->  100% as N -> infinity",
+      refLabel: "Misra & Sudarshan (1977) The Zeno's paradox in quantum theory, J. Math. Phys. 18, 756",
+      refUrl: "https://pubs.aip.org/aip/jmp/article/18/4/756/225634/The-Zeno-s-paradox-in-quantum-theory"
+    },
+    {
+      code: "Q1", group: "G1",
+      title: "Rabi Precession & Quantum-Jump Bloch Cloud",
+      summary: "Watch an ensemble of 64 individual Bloch trajectories precess continuously around drive vector (Omega_x, Omega_y, Delta_z) while undergoing stochastic Poissonian spontaneous-emission jumps to |0⟩.",
+      equation: "dr/dt = Omega x r - gamma_perp (rx, ry, 0) + Poisson_Jumps(|0⟩)   |   r = (⟨X⟩, ⟨Y⟩, ⟨Z⟩)",
+      refLabel: "Feynman, Vernon & Hellwarth (1957) Geometrical Representation of the Schrodinger Equation, J. Appl. Phys. 28, 49",
+      refUrl: "https://pubs.aip.org/aip/jap/article/28/1/49/161271/Geometrical-Representation-of-the-Schrodinger"
+    },
+    {
+      code: "Q2", group: "G1",
+      title: "Multi-Qubit Stochastic Gate-Noise & Shot Stream",
+      summary: "Watch continuous photonic shots traverse Bell, GHZ, or QFT circuits while stochastic Pauli depolarizing faults spark along the wires and empirical Born histograms converge.",
+      equation: "rho_shot = U_L ... E_fault ... U_1 |0...0⟩⟨0...0|   |   P_hat(k) --> Tr(|k⟩⟨k| rho_noisy)",
+      refLabel: "Cross et al. (2017) Open Quantum Assembly Language (OpenQASM 2.0), arXiv:1707.03429",
+      refUrl: "https://arxiv.org/abs/1707.03429"
+    },
+    {
+      code: "Q3", group: "G1",
+      title: "Continuous EPR Teleportation Photon-Pair Stream",
+      summary: "Watch SPDC entangled pairs fly toward Alice and Bob, trigger stochastic 2-bit Bell measurements (m0, m1) and classical feed-forward packets, and populate Bob's recovered Bloch cloud.",
+      equation: "|psi⟩_0 (x) |Phi+⟩_12  -->  Bell(m0, m1)  -->  Bob applies Z^m0 X^m1  (Ensemble Fidelity F = 1 - 2p/3)",
+      refLabel: "Bennett et al. (1993) Teleporting an unknown quantum state, Phys. Rev. Lett. 70, 1895",
+      refUrl: "https://link.aps.org/doi/10.1103/PhysRevLett.70.1895"
+    },
+    {
+      code: "Q4", group: "G1",
+      title: "Lindblad Walker Cloud & 3-Qubit Stabilizer Loop",
+      summary: "Watch 64 Monte-Carlo states diffuse under T1, T2, or depolarizing channels while periodic Z0Z1/Z1Z2 syndrome cycles heal single-qubit strikes in real time.",
+      equation: "rho' = sum_k E_k rho E_k^†   |   3-Qubit Syndrome Failure per Cycle = 3*p^2*(1 - p) + p^3",
+      refLabel: "Shor (1995) Scheme for reducing decoherence in quantum computer memory, Phys. Rev. A 52, R2493",
+      refUrl: "https://link.aps.org/doi/10.1103/PhysRevA.52.R2493"
+    },
+    {
+      code: "Q5", group: "G1",
+      title: "Entanglement Swapping & Linear-Optical Quantum Repeater",
+      summary: "Watch N_hops + 1 independent SPDC sources fire entangled photon pairs into N_hops intermediate Bell-state analyzers, heralding non-local entanglement with selectable 50% passive linear-optical post-selection.",
+      equation: "w_end = (1 - 4p/3)^(N_hops + 1),   F_Bell = (1 + 3*w_end)/4,   P_herald(LO-BSM) = (1/2)^N_hops",
+      refLabel: "Żukowski, Zeilinger, Horne & Ekert (1993) Event-ready-detectors Bell experiment via entanglement swapping, Phys. Rev. Lett. 71, 4287",
+      refUrl: "https://link.aps.org/doi/10.1103/PhysRevLett.71.4287",
+      refLabel2: "Bouwmeester et al. (1997) Experimental quantum teleportation (50% linear-optics BSM), arXiv:1901.11004",
+      refUrl2: "https://arxiv.org/abs/1901.11004"
+    },
+    {
+      code: "D1", group: "G2",
+      title: "High-Dimensional Qudit (d = 2..8) Waveguide Stream",
+      summary: "Watch d-level orbital-angular-momentum / path-encoded pulses stream across d parallel optical rails through F_d + CSUM couplers, building live |j, j+a⟩ coincidences.",
+      equation: "Z_d X_d = exp(2*pi*i/d) X_d Z_d   |   |Phi_d⟩ = (1/sqrt(d)) sum_{j=0}^{d-1} |j, j⟩   (I_max = log2(d) ebits)",
+      refLabel: "Wang, Hu, Sanders & Kais (2020) Qudits and High-Dimensional Quantum Computing, Front. Phys. 8:589504",
+      refUrl: "https://www.frontiersin.org/journals/physics/articles/10.3389/fphy.2020.589504/full"
+    },
+    {
+      code: "D2", group: "G2",
+      title: "d-Dimensional Weyl-Heisenberg Qudit Teleportation",
+      summary: "Watch a d-level photonic superposition (d = 2..8) undergo a d^2-outcome generalized Bell projection (m, n), relay 2*log2(d) classical bits, and reconstruct via Weyl Z_d^m X_d^n above the 2/(d+1) classical limit.",
+      equation: "|psi_d⟩ (x) |Phi_d⟩ → Bell_d(m, n) ∈ Z_d^2 → Bob applies Z_d^m X_d^n:   F_avg = 1 - p*(d-1)/d > 2/(d+1)",
+      refLabel: "Luo et al. (2019) Quantum Teleportation in High Dimensions, Phys. Rev. Lett. 123, 070505",
+      refUrl: "https://link.aps.org/doi/10.1103/PhysRevLett.123.070505"
+    },
+    {
+      code: "K1", group: "G3",
+      title: "Live BB84 Photonic Fiber Stream (Alice → Eve → Bob)",
+      summary: "Watch polarized single photons stream past Eve's intercept-resend beam splitter into Bob's basis switch while the live sifted key tape scrolls and QBER(t) converges.",
+      equation: "QBER_expected = 0.25*p_Eve*(1 - p_ch) + (1 - 0.25*p_Eve)*p_ch   |   Secure iff QBER < 11.0%",
+      refLabel: "Bennett & Brassard (1984) Quantum cryptography: Public key distribution and coin tossing, arXiv:2003.06557",
+      refUrl: "https://arxiv.org/abs/2003.06557"
+    },
+    {
+      code: "K2", group: "G3",
+      title: "Live E91 Entangled Singlet Stream & CHSH Bell Drift",
+      summary: "Watch singlet |Psi-⟩ photon pairs enter rotating 3x3 Alice/Bob polarizers as empirical CHSH |S(t)| converges toward Tsirelson's 2*sqrt(2) = 2.828 ceiling or drops below 2.0.",
+      equation: "S(t) = E(a1,b1) - E(a1,b3) + E(a3,b1) + E(a3,b3)   |   |S|_local <= 2.0 < |S|_QM = 2*sqrt(2)",
+      refLabel: "Ekert (1991) Quantum cryptography based on Bell's theorem, Phys. Rev. Lett. 67, 661",
+      refUrl: "https://link.aps.org/doi/10.1103/PhysRevLett.67.661"
+    },
+    {
+      code: "K3", group: "G3",
+      title: "Live B92 Non-Orthogonal Stream & POVM Sorter",
+      summary: "Watch non-orthogonal |psi_0⟩ and |psi_1⟩ pulses enter Bob's 3-port POVM filter, routing inconclusive erasures to the dump while conclusive clicks accumulate.",
+      equation: "|⟨psi_0|psi_1⟩| = cos(theta),   Conclusive Yield --> 0.5*sin^2(theta),   IDP USD = 1 - cos(theta)",
+      refLabel: "Bennett (1992) Quantum cryptography using any two nonorthogonal states, Phys. Rev. Lett. 68, 3121",
+      refUrl: "https://link.aps.org/doi/10.1103/PhysRevLett.68.3121"
+    },
+    {
+      code: "C1", group: "G4",
+      title: "Shot-by-Shot Shor Inverse-QFT Resonance Stream",
+      summary: "Watch independent quantum order-finding shots rain onto the frequency register, gradually sculpting constructive interference spikes at j*2^m/r until continued fractions lock N = p * q.",
+      equation: "P_hat(y) --> |(1/Q) sum_{x: a^x == z} exp(2*pi*i*x*y/Q)|^2   ==>   gcd(a^(r/2) +/- 1, N)",
+      refLabel: "Shor (1997) Polynomial-Time Algorithms for Prime Factorization and Discrete Logarithms, SIAM J. Comput. 26(5), 1484",
+      refUrl: "https://epubs.siam.org/doi/10.1137/S0097539795293172"
+    },
+    {
+      code: "C2", group: "G4",
+      title: "Continuous Grover Rotor & Amplitude-Amplification Wave",
+      summary: "Watch the statevector rotate smoothly in the (|psi_perp⟩, |w⟩) plane under phase-damping jitter while candidate cipher-key probabilities surge to k_opt and over-rotate.",
+      equation: "G = (2|s⟩⟨s| - I) O_f   |   theta_k = (2k + 1) * arcsin(1 / sqrt(N)),   k_opt ~ (pi/4)*sqrt(N)",
+      refLabel: "Grover (1996) A fast quantum mechanical algorithm for database search, STOC '96 / arXiv:quant-ph/9605043",
+      refUrl: "https://arxiv.org/abs/quant-ph/9605043"
+    },
+    {
+      code: "C3", group: "G4",
+      title: "Live NIST FIPS 203 ML-KEM Encapsulation & Lattice Cloud",
+      summary: "Watch continuous KeyGen-Encaps-Decaps handshakes execute in R_3329 = Z_3329[X]/(X^n + 1), plotting max |e_dec(t)| against q/4 = 832 and scattering noisy t = A*s + e vectors.",
+      equation: "t = A*s + e (mod 3329, X^n + 1),   w = v - s^T*u = round(q/2)*m + e_dec,   Exact iff |e_dec| < 832",
+      refLabel: "NIST FIPS 203 (2024) Module-Lattice-Based Key-Encapsulation Mechanism Standard (ML-KEM)",
+      refUrl: "https://csrc.nist.gov/pubs/fips/203/final"
+    },
+    {
+      code: "C4", group: "G4",
+      title: "FIPS 204 Rejection-Sampling Fountain & Merkle Stream",
+      summary: "Watch candidate lattice signatures z = y + c*s rain through the ||z||_inf < gamma_1 - beta gate, deflecting secret-leaking boundary hits while accepted blocks extend a SHA-256 Merkle chain.",
+      equation: "z = y + c*s:  Accept iff ||z||_inf < gamma_1 - tau*eta   |   Block_t = SHA256(Root_{t-1} || Sig_t)",
+      refLabel: "NIST FIPS 204 (ML-DSA) & NIST SP 800-208 (Stateful Hash-Based Signatures)",
+      refUrl: "https://csrc.nist.gov/pubs/fips/204/final",
+      refUrl2: "https://csrc.nist.gov/pubs/sp/800/208/final"
+    },
+    {
+      code: "A1", group: "G5",
+      title: "2D Rotated Surface Code (d = 3, 5, 7) & Threshold Crossover",
+      summary: "Watch stochastic X/Z Pauli errors strike a d x d surface-code checkerboard, trigger X/Z plaquette syndromes, and flip distance scaling across the ~1.0% threshold.",
+      equation: "[[d^2, 1, d]] Rotated Surface Code:  P_logical_cycle ~ 0.08 * (p / p_th)^((d + 1)/2),   p_th ~ 1.0%",
+      refLabel: "Fowler, Mariantoni, Martinis & Cleland (2012) Surface codes: Towards practical large-scale quantum computation, Phys. Rev. A 86, 032324",
+      refUrl: "https://link.aps.org/doi/10.1103/PhysRevA.86.032324"
+    },
+    {
+      code: "A2", group: "G5",
+      title: "Variational Quantum Eigensolver (VQE) Molecular H2 Trajectory",
+      summary: "Watch a shot-noise SPSA variational optimizer descend the 2-qubit H2 molecular energy curve E(R, theta) across bond lengths R = 0.35..2.40 Å toward chemical accuracy.",
+      equation: "H_{H2}(R) = g0*I + g1*Z0 + g2*Z1 + g3*Z0Z1 + g4*(X0X1 + Y0Y1),   |E_VQE - E_FCI| <= 1.6 mHa",
+      refLabel: "Peruzzo, McClean, Shadbolt et al. (2014) A variational eigenvalue solver on a photonic quantum processor, Nat. Commun. 5, 4213",
+      refUrl: "https://pmc.ncbi.nlm.nih.gov/articles/PMC4124861/"
+    },
+    {
+      code: "A3", group: "G5",
+      title: "QAOA Combinatorial Max-Cut & Neutral-Atom Rydberg Graph",
+      summary: "Watch alternating cost/mixer QAOA layers (p = 1..6) pulse across an 8-atom Rydberg blockade array, concentrating bitstring shots onto maximum-cut partitions.",
+      equation: "|gamma, beta⟩ = prod_{l=1}^p exp(-i*beta_l sum X_i) exp(-i*gamma_l C_MaxCut) |+⟩^8   (C_max = 10)",
+      refLabel: "Farhi, Goldstone & Gutmann (2014) A Quantum Approximate Optimization Algorithm, arXiv:1411.4028",
+      refUrl: "https://arxiv.org/abs/1411.4028"
+    },
+    {
+      code: "A4", group: "G5",
+      title: "Bravyi-Kitaev 15-to-1 Magic-State Distillation Factory",
+      summary: "Watch noisy raw |T⟩ ancillas stream through 15-qubit Reed-Muller [[15, 1, 3]] stabilizer factories, post-selecting clean blocks for cubic 35*p_in^3 error suppression.",
+      equation: "[[15, 1, 3]] Reed-Muller T-Factory:  p_out ~ 35 * p_in^3,   Acceptance Yield ~ (1 - 15*p_in)",
+      refLabel: "Bravyi & Kitaev (2005) Universal quantum computation with ideal Clifford gates and noisy ancillas, Phys. Rev. A 71, 022316",
+      refUrl: "https://link.aps.org/doi/10.1103/PhysRevA.71.022316"
+    },
+    {
+      code: "A5", group: "G5",
+      title: "Gottesman-Chuang Magic-State T-Gate Teleportation",
+      summary: "Watch non-Clifford T = diag(1, e^(i*pi/4)) gates execute fault-tolerantly via |T⟩ ancilla consumption, CNOT coupling, Z-measurement, and conditional Clifford S^m feed-forward across chained octant steps.",
+      equation: "CNOT(|psi⟩|T⟩) → measure Z_anc = m ∈ {0, 1} → apply Clifford S^m  ==>  e^(i*m*pi/4) T|psi⟩",
+      refLabel: "Gottesman & Chuang (1999) Quantum Teleportation is a Universal Computational Primitive, arXiv:quant-ph/9908010",
+      refUrl: "https://arxiv.org/abs/quant-ph/9908010"
+    }
+  ];
+
+  // =========================================================================
+  // 2. Deterministic PRNG & Pure-JS SHA-256
+  // =========================================================================
+  class DetRng {
+    constructor(seed) {
+      let s = BigInt(seed >>> 0) + 0x9e3779b97f4a7c15n;
+      const sm = () => {
+        s = (s + 0x9e3779b97f4a7c15n) & 0xffffffffffffffffn;
+        let z = s;
+        z = ((z ^ (z >> 30n)) * 0xbf58476d1ce4e5b9n) & 0xffffffffffffffffn;
+        z = ((z ^ (z >> 27n)) * 0x94d049bb133111ebn) & 0xffffffffffffffffn;
+        return (z ^ (z >> 31n)) & 0xffffffffffffffffn;
+      };
+      this.s0 = Number(sm() & 0xffffffffn) >>> 0;
+      this.s1 = Number((sm() >> 32n) & 0xffffffffn) >>> 0;
+      this.s2 = Number(sm() & 0xffffffffn) >>> 0;
+      this.s3 = Number((sm() >> 32n) & 0xffffffffn) >>> 0;
+      if ((this.s0 | this.s1 | this.s2 | this.s3) === 0) this.s0 = 1;
+    }
+    nextU32() {
+      const res = Math.imul(this.s1, 5);
+      const rot = ((res << 7) | (res >>> 25)) >>> 0;
+      const out = Math.imul(rot, 9) >>> 0;
+      const t = (this.s1 << 9) >>> 0;
+      this.s2 ^= this.s0; this.s3 ^= this.s1; this.s1 ^= this.s2; this.s0 ^= this.s3;
+      this.s2 ^= t;
+      this.s3 = ((this.s3 << 11) | (this.s3 >>> 21)) >>> 0;
+      return out;
+    }
+    nextF64() { return this.nextU32() / 4294967296.0; }
+    nextBool() { return (this.nextU32() & 1) === 1; }
+    nextInt(bound) { return bound <= 1 ? 0 : (this.nextU32() % bound); }
+    nextGauss() {
+      const u1 = Math.max(1e-9, this.nextF64());
+      const u2 = this.nextF64();
+      return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    }
+  }
+
+  const SHA256_K = new Uint32Array([
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+  ]);
+  function rotr(x, n) { return ((x >>> n) | (x << (32 - n))) >>> 0; }
+  function sha256HexStr(str) {
+    const bytes = new TextEncoder().encode(str);
+    const h = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
+    const bitLen = bytes.length * 8;
+    const padLen = (((bytes.length + 9 + 63) >> 6) << 6);
+    const buf = new Uint8Array(padLen);
+    buf.set(bytes); buf[bytes.length] = 0x80;
+    const dv = new DataView(buf.buffer);
+    dv.setUint32(padLen - 8, Math.floor(bitLen / 4294967296), false);
+    dv.setUint32(padLen - 4, bitLen >>> 0, false);
+    const w = new Uint32Array(64);
+    for (let off = 0; off < padLen; off += 64) {
+      for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4, false);
+      for (let i = 16; i < 64; i++) {
+        const s0 = rotr(w[i-15],7)^rotr(w[i-15],18)^(w[i-15]>>>3);
+        const s1 = rotr(w[i-2],17)^rotr(w[i-2],19)^(w[i-2]>>>10);
+        w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;
+      }
+      let a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7];
+      for (let i = 0; i < 64; i++) {
+        const S1 = rotr(e,6)^rotr(e,11)^rotr(e,25);
+        const ch = (e & f) ^ ((~e) & g);
+        const t1 = (hh + S1 + ch + SHA256_K[i] + w[i]) >>> 0;
+        const S0 = rotr(a,2)^rotr(a,13)^rotr(a,22);
+        const maj = (a & b) ^ (a & c) ^ (b & c);
+        const t2 = (S0 + maj) >>> 0;
+        hh=g; g=f; f=e; e=(d+t1)>>>0; d=c; c=b; b=a; a=(t1+t2)>>>0;
+      }
+      h[0]=(h[0]+a)>>>0; h[1]=(h[1]+b)>>>0; h[2]=(h[2]+c)>>>0; h[3]=(h[3]+d)>>>0;
+      h[4]=(h[4]+e)>>>0; h[5]=(h[5]+f)>>>0; h[6]=(h[6]+g)>>>0; h[7]=(h[7]+hh)>>>0;
+    }
+    let out = "";
+    for (let i = 0; i < 8; i++) out += h[i].toString(16).padStart(8, "0");
+    return out;
+  }
+
+  function gcd(a, b) { while (b !== 0) { const r = a % b; a = b; b = r; } return a; }
+  function modPow(base, exp, mod) {
+    let res = 1, b = base % mod, e = exp;
+    while (e > 0) { if (e & 1) res = (res * b) % mod; b = (b * b) % mod; e >>= 1; }
+    return res;
+  }
+  function binaryEntropy(p) {
+    if (p <= 1e-12 || p >= 1 - 1e-12) return 0;
+    return -p * Math.log2(p) - (1 - p) * Math.log2(1 - p);
+  }
+
+  // =========================================================================
+  // 3. Parameters & Continuous Stochastic Arena State
+  // =========================================================================
+  function makeDefaultParams() {
+    return {
+      activeModule: "Q5",
+      seed: 20261114,
+      i1Sep: 4.5,
+      i1Path: 0.0,
+      i2Phase: 0.0,
+      i2Block: true,
+      i3Angle: 90,
+      i3Filter: true,
+      i4Stages: 8,
+      // Q1
+      q1Omega: 2.2,
+      q1Azimuth: 0.6,
+      q1Detune: 0.7,
+      q1JumpRate: 0.45,
+      // Q2
+      q2Preset: "bell",
+      q2GateFault: 0.05,
+      // Q3
+      q3Theta: 1.15,
+      q3Phi: 0.85,
+      q3Drift: 0.4,
+      q3Depol: 0.08,
+      // Q4
+      q4Channel: "T1",
+      q4DecohRate: 0.55,
+      q4PhysP: 0.09,
+      // D1
+      d1Dim: 4,
+      d1ShiftA: 1,
+      d1Crosstalk: 0.05,
+      // K1
+      k1Eve: 0.12,
+      k1Noise: 0.015,
+      // K2
+      k2Eve: 0.08,
+      k2Vis: 0.97,
+      // K3
+      k3Angle: 45,
+      k3Eve: 0.05,
+      // C1
+      c1ModN: 35,
+      c1BaseA: 2,
+      c1QubitsM: 7,
+      // C2
+      c2Bits: 5,
+      c2Secret: 19,
+      c2Dephase: 0.02,
+      // C3
+      c3Profile: "768",
+      c3Eta: 2,
+      // C4
+      c4Gamma1: 128,
+      c4Eta: 2,
+      c4Tau: 8,
+      a1Dist: 5,
+      a1PhysP: 0.006,
+      a2BondR: 0.74,
+      a2Noise: 0.025,
+      a3DepthP: 3,
+      a3Gamma: 0.85,
+      a4RawP: 0.020,
+      q5Hops: 2,
+      q5LinkP: 0.030,
+      q5LinearOptics: true,
+      d2Dim: 3,
+      d2Tilt: 0.55,
+      d2Depol: 0.08,
+      a5Depth: 6,
+      a5RawP: 0.045,
+      a5Distilled: true
+    };
+  }
+
+  let ws = makeDefaultParams();
+  let viewMode = "workspace";
+  let isPlaying = true;
+  let speedMult = 1.0;
+  let blochYaw = 0.62;
+  let blochPitch = 0.32;
+  let savedSlots = {};
+  try {
+    const raw = localStorage.getItem("quantacrypt_v2_slots");
+    if (raw) savedSlots = JSON.parse(raw) || {};
+  } catch (_) {}
+
+  let arena = null;
+  function createArena() {
+    const rng = new DetRng(ws.seed);
+    const walkersQ1 = Array.from({ length: 64 }, () => [0, 0, 1, 0]); // [x, y, z, jumpFlash]
+    const walkersQ4 = Array.from({ length: 64 }, () => [1, 0, 0, 0]);
+    return {
+      rng,
+      simTime: 0,
+      events: 0,
+      accum: 0,
+      // Q1
+      q1Walkers: walkersQ1,
+      q1Jumps: 0,
+      q1TraceX: [], q1TraceY: [], q1TraceZ: [],
+      // Q2
+      q2Packets: [],
+      q2Sparks: [],
+      q2Counts: new Float64Array(16),
+      q2Ideal: new Float64Array(16),
+      // Q3
+      q3Flight: 0,
+      q3Bell: [0, 0],
+      q3Cloud: [],
+      q3FidSum: 0, q3FidCnt: 0,
+      // Q4
+      q4Walkers: walkersQ4,
+      q4UnencSurv: 1.0,
+      q4CodedSurv: 1.0,
+      q4Syndrome: [0, 0],
+      q4FaultBits: [0, 0, 0],
+      q4TraceU: [], q4TraceC: [],
+      // D1
+      d1Pulses: [],
+      d1Coinc: new Float64Array(64),
+      // K1
+      k1Photons: [],
+      k1Sifted: 0, k1Errs: 0,
+      k1Tape: [],
+      k1QberTrace: [],
+      // K2
+      k2Pairs: [],
+      k2Sum: [[0,0,0],[0,0,0],[0,0,0]],
+      k2Cnt: [[0,0,0],[0,0,0],[0,0,0]],
+      k2TraceS: [],
+      // K3
+      k3Pulses: [],
+      k3Conc: 0, k3Erase: 0, k3Errs: 0,
+      k3TraceY: [],
+      // C1
+      c1Drops: [],
+      c1Bins: new Float64Array(128),
+      c1Spectrum: null,
+      c1PeriodR: 1,
+      c1Factors: null,
+      // C2
+      c2Angle: 0,
+      c2StepFloat: 0,
+      c2Probs: new Float64Array(32),
+      c2History: [],
+      // C3
+      c3Handshakes: 0,
+      c3Failures: 0,
+      c3LastMax: 0,
+      c3NoiseTrace: [],
+      c3Cloud: [],
+      // C4
+      c4Particles: [],
+      c4Trials: 0, c4Acc: 0,
+      c4RawBins: new Float64Array(21),
+      c4AccBins: new Float64Array(21),
+      c4MerkleTip: sha256HexStr("genesis:" + ws.seed).slice(0, 24),
+      i1Hits: [],
+      i1Bins: new Float64Array(64),
+      i2Photons: [],
+      i2Counts: [0, 0, 0],
+      i3Atoms: [],
+      i3Counts: [0, 0, 0],
+      i4Photons: [],
+      i4Trans: 0, i4Abs: 0, i4Trace: [],
+      a1Grid: new Uint8Array(49),
+      a1Surv3: 1.0, a1Surv5: 1.0, a1Surv7: 1.0,
+      a1Trace3: [], a1Trace5: [], a1Trace7: [],
+      a2Theta: 1.15,
+      a2TraceE: [],
+      a3Mask: 0x5a,
+      a3CutBins: new Float64Array(11),
+      a3TraceR: [],
+      a4Items: [],
+      a4Batches: 0, a4Ok: 0, a4Err: 0, a4Abort: 0,
+      a4TraceOut: [],
+      q5Trials: 0, q5Heralded: 0, q5Matches: 0,
+      q5SwapFlags: [true, true],
+      q5AllOk: true,
+      q5Phase: 0,
+      q5TraceF: [],
+      d2Counts: new Float64Array(8),
+      d2Ideal: [0.6, 0.25, 0.15],
+      d2LastM: 0, d2LastN: 0,
+      d2PacketX: 0,
+      d2FidSum: 0, d2Shots: 0,
+      d2TraceF: [],
+      a5Cloud: [],
+      a5Fixups: 0, a5Gadgets: 0,
+      a5FidSum: 0, a5Shots: 0,
+      a5LastM: 0,
+      a5TraceF: []
+    };
+  }
+
+  function resetStream() {
+    arena = createArena();
+    rebuildC1Spectrum();
+    rebuildQ2Ideal();
+  }
+
+  function rebuildQ2Ideal() {
+    if (!arena) return;
+    if (ws.q2Preset === "bell") {
+      arena.q2Counts = new Float64Array(4);
+      arena.q2Ideal = new Float64Array([0.5, 0, 0, 0.5]);
+    } else if (ws.q2Preset === "ghz") {
+      arena.q2Counts = new Float64Array(16);
+      arena.q2Ideal = new Float64Array(16);
+      arena.q2Ideal[0] = 0.5; arena.q2Ideal[15] = 0.5;
+    } else {
+      arena.q2Counts = new Float64Array(8);
+      arena.q2Ideal = new Float64Array(8).fill(0.125);
+    }
+  }
+
+  function rebuildC1Spectrum() {
+    if (!arena) return;
+    const N = ws.c1ModN;
+    const a = Math.max(2, Math.min(N - 1, ws.c1BaseA));
+    const Q = 1 << ws.c1QubitsM;
+    const map = new Map();
+    let cur = 1;
+    for (let x = 0; x < Q; x++) {
+      if (!map.has(cur)) map.set(cur, []);
+      map.get(cur).push(x);
+      cur = (cur * a) % N;
+    }
+    const spec = new Float64Array(Q);
+    const invQ = 1 / Q;
+    for (let y = 0; y < Q; y++) {
+      let py = 0;
+      for (const xs of map.values()) {
+        let re = 0, im = 0;
+        for (let i = 0; i < xs.length; i++) {
+          const ang = 2 * Math.PI * ((xs[i] * y) % Q) * invQ;
+          re += Math.cos(ang); im += Math.sin(ang);
+        }
+        re *= invQ; im *= invQ;
+        py += re * re + im * im;
+      }
+      spec[y] = py;
+    }
+    arena.c1Spectrum = spec;
+    arena.c1Bins = new Float64Array(Math.min(64, Q));
+    let r = 1;
+    if (gcd(a, N) === 1) {
+      while (r <= N && modPow(a, r, N) !== 1) r++;
+    }
+    arena.c1PeriodR = r;
+    arena.c1Factors = null;
+    if (gcd(a, N) > 1) {
+      const g = gcd(a, N);
+      arena.c1Factors = [Math.min(g, N / g), Math.max(g, N / g)];
+    } else if (r % 2 === 0) {
+      const hp = modPow(a, r / 2, N);
+      if (hp !== N - 1) {
+        const p1 = gcd(hp + 1, N), p2 = gcd(hp - 1, N);
+        if (p1 > 1 && p1 < N) arena.c1Factors = [Math.min(p1, N / p1), Math.max(p1, N / p1)];
+        else if (p2 > 1 && p2 < N) arena.c1Factors = [Math.min(p2, N / p2), Math.max(p2, N / p2)];
+      }
+    }
+  }
+
+  // =========================================================================
+  // 4. Real-Time Stochastic Physics & Crypto Stepper (60 FPS)
+  // =========================================================================
+  function pushRing(arr, item, cap) {
+    arr.push(item);
+    if (arr.length > cap) arr.shift();
+  }
+
+  function h2MorseAndVar(rAng, theta) {
+    const r = Math.max(0.30, Math.min(2.50, rAng));
+    const morse = -0.9330 - 0.2043 * Math.pow(1 - Math.exp(-1.88 * (r - 0.7414)), 2) + (r < 0.55 ? 0.35 * Math.pow(0.55 - r, 2) : 0);
+    const g = 0.18 + 0.14 * Math.max(-0.3, r - 0.74);
+    const dhf = Math.max(0.08, Math.min(1.9, 0.78 / (r * r)));
+    const thOpt = -Math.atan((2 * g) / dhf);
+    const eVar = morse + 0.5 * Math.hypot(dhf, 2 * g) * (1 - Math.cos(theta - thOpt));
+    return [morse, eVar];
+  }
+
+  function stepArena(rawDt) {
+    if (!isPlaying || !arena) return;
+    const dt = Math.min(0.05, Math.max(0.001, rawDt)) * speedMult;
+    arena.simTime += dt;
+    const rng = arena.rng;
+    const mod = ws.activeModule;
+
+    if (mod === "Q5") {
+      const hops = ws.q5Hops;
+      const pL = ws.q5LinkP;
+      const wLink = Math.max(0, 1 - (4 * pL) / 3);
+      const wEnd = Math.pow(wLink, hops + 1);
+      const fBell = 0.25 + 0.75 * wEnd;
+      arena.q5Phase = (arena.q5Phase + dt * 1.35) % 1.0;
+      arena.accum += dt * 24;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        arena.q5Trials++;
+        const flags = [];
+        let allOk = true;
+        for (let h = 0; h < hops; h++) {
+          const ok = ws.q5LinearOptics ? rng.nextBool() : true;
+          flags.push(ok);
+          if (!ok) allOk = false;
+        }
+        arena.q5SwapFlags = flags;
+        arena.q5AllOk = allOk;
+        if (allOk) {
+          arena.q5Heralded++;
+          if (rng.nextF64() < fBell) arena.q5Matches++;
+        }
+      }
+      if (arena.q5Heralded > 0) {
+        const empF = arena.q5Matches / arena.q5Heralded;
+        pushRing(arena.q5TraceF, [arena.simTime, empF], 150);
+      }
+      return;
+    }
+    if (mod === "D2") {
+      const d = ws.d2Dim;
+      if (arena.d2Counts.length !== d) arena.d2Counts = new Float64Array(d);
+      const weights = [];
+      let zSum = 0;
+      for (let k = 0; k < d; k++) {
+        const w = Math.exp(-2 * ws.d2Tilt * k);
+        weights.push(w);
+        zSum += w;
+      }
+      arena.d2Ideal = weights.map(w => w / Math.max(1e-12, zSum));
+      arena.d2PacketX = (arena.d2PacketX + dt * 1.6) % 1.0;
+      arena.accum += dt * 30;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        arena.d2Shots++;
+        arena.d2LastM = rng.nextInt(d);
+        arena.d2LastN = rng.nextInt(d);
+        if (rng.nextF64() >= ws.d2Depol) {
+          const u = rng.nextF64();
+          let cdf = 0, pick = d - 1;
+          for (let k = 0; k < d; k++) {
+            cdf += arena.d2Ideal[k];
+            if (u <= cdf) { pick = k; break; }
+          }
+          arena.d2Counts[pick] += 1;
+          arena.d2FidSum += 1.0;
+        } else {
+          arena.d2Counts[rng.nextInt(d)] += 1;
+          arena.d2FidSum += 1.0 / d;
+        }
+      }
+      if (arena.d2Shots > 0) {
+        pushRing(arena.d2TraceF, [arena.simTime, arena.d2FidSum / arena.d2Shots], 150);
+      }
+      return;
+    }
+    if (mod === "A5") {
+      const depth = ws.a5Depth;
+      const pRaw = ws.a5RawP;
+      const pEff = ws.a5Distilled ? Math.min(pRaw, 35 * Math.pow(pRaw, 3) + 0.0008) : pRaw;
+      const targetPhi = depth * (Math.PI * 0.25);
+      arena.accum += dt * 24;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        arena.a5Shots++;
+        let phi = 0;
+        for (let g = 0; g < depth; g++) {
+          arena.a5Gadgets++;
+          const m = rng.nextBool() ? 1 : 0;
+          arena.a5LastM = m;
+          if (m === 1) {
+            arena.a5Fixups++;
+            phi += -Math.PI * 0.25 + Math.PI * 0.50;
+          } else {
+            phi += Math.PI * 0.25;
+          }
+          if (rng.nextF64() < pEff) {
+            phi += Math.PI * (0.85 + 0.30 * rng.nextF64());
+          }
+        }
+        const bx = Math.cos(phi), by = Math.sin(phi), bz = (rng.nextF64() - 0.5) * 0.06;
+        pushRing(arena.a5Cloud, [bx, by, bz], 84);
+        arena.a5FidSum += 0.5 * (1 + Math.cos(phi - targetPhi));
+      }
+      if (arena.a5Shots > 0) {
+        pushRing(arena.a5TraceF, [arena.simTime, arena.a5FidSum / arena.a5Shots], 150);
+      }
+      return;
+    }
+    if (mod === "I1") {
+      const vis = Math.max(0, 1 - ws.i1Path);
+      const sep = ws.i1Sep;
+      arena.i1Hits.forEach(h => { h.flash = Math.max(0, h.flash - dt * 2.5); });
+      arena.accum += dt * 55;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        for (let tr = 0; tr < 16; tr++) {
+          const x = 2 * rng.nextF64() - 1;
+          const e1 = Math.exp(-Math.pow((x - 0.18) / 0.42, 2));
+          const e2 = Math.exp(-Math.pow((x + 0.18) / 0.42, 2));
+          const inten = 0.5 * (e1 + e2 + 2 * vis * Math.sqrt(e1 * e2) * Math.cos(Math.PI * sep * x));
+          if (rng.nextF64() * 1.95 <= inten) {
+            const xn = Math.max(0, Math.min(0.999, (x + 1) * 0.5));
+            pushRing(arena.i1Hits, { x: xn, y: rng.nextF64(), flash: 1.0 }, 420);
+            arena.i1Bins[Math.floor(xn * 64)] += 1;
+            arena.events++;
+            break;
+          }
+        }
+      }
+      return;
+    }
+    if (mod === "I2") {
+      arena.i2Photons.forEach(p => { p.t += dt * 0.78; });
+      arena.i2Photons = arena.i2Photons.filter(p => p.t < 1.0);
+      arena.accum += dt * 24;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        let out = 0;
+        const arm = rng.nextBool() ? 1 : 0;
+        if (ws.i2Block) {
+          if (arm === 1) out = 2;
+          else out = rng.nextBool() ? 0 : 1;
+        } else {
+          out = rng.nextF64() < Math.pow(Math.cos(0.5 * ws.i2Phase), 2) ? 0 : 1;
+        }
+        arena.i2Counts[out] += 1;
+        if (arena.i2Photons.length < 34) arena.i2Photons.push({ t: 0, arm, out });
+      }
+      return;
+    }
+    if (mod === "I3") {
+      arena.i3Atoms.forEach(a => { a.x += dt * 0.75; });
+      arena.i3Atoms = arena.i3Atoms.filter(a => a.x < 1.0);
+      const th = (ws.i3Angle * Math.PI) / 180;
+      const c2 = Math.pow(Math.cos(0.5 * th), 2);
+      arena.accum += dt * 28;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        if (!rng.nextBool()) {
+          arena.i3Counts[2]++;
+          if (arena.i3Atoms.length < 34) arena.i3Atoms.push({ x: 0, stop: 0.30, up: false });
+          continue;
+        }
+        if (!ws.i3Filter) {
+          arena.i3Counts[0]++;
+          if (arena.i3Atoms.length < 34) arena.i3Atoms.push({ x: 0, stop: 1.0, up: true });
+        } else if (rng.nextF64() >= c2) {
+          arena.i3Counts[2]++;
+          if (arena.i3Atoms.length < 34) arena.i3Atoms.push({ x: 0, stop: 0.62, up: false });
+        } else {
+          const finalUp = rng.nextF64() < c2;
+          arena.i3Counts[finalUp ? 0 : 1]++;
+          if (arena.i3Atoms.length < 34) arena.i3Atoms.push({ x: 0, stop: 1.0, up: finalUp });
+        }
+      }
+      return;
+    }
+    if (mod === "I4") {
+      const n = ws.i4Stages;
+      const stepC2 = Math.pow(Math.cos(Math.PI / (2 * n)), 2);
+      arena.i4Photons.forEach(p => { p.x += dt * 0.82; });
+      arena.i4Photons = arena.i4Photons.filter(p => p.x < p.stop);
+      arena.accum += dt * 30;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        let survived = true, stopStage = n;
+        for (let k = 0; k < n; k++) {
+          if (rng.nextF64() > stepC2) { survived = false; stopStage = k + 1; break; }
+        }
+        if (survived) arena.i4Trans++; else arena.i4Abs++;
+        if (arena.i4Photons.length < 32) {
+          arena.i4Photons.push({ x: 0, stop: survived ? 1.0 : 0.12 + 0.76 * (stopStage / n), ok: survived });
+        }
+      }
+      const tot = arena.i4Trans + arena.i4Abs;
+      if (tot > 0) pushRing(arena.i4Trace, [arena.simTime, (arena.i4Trans / tot) * 100], 150);
+      return;
+    }
+    if (mod === "A1") {
+      const d = ws.a1Dist;
+      if (arena.a1Grid.length !== d * d) arena.a1Grid = new Uint8Array(d * d);
+      const p = ws.a1PhysP, pTh = 0.010;
+      arena.accum += dt * 12;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        for (let i = 0; i < d * d; i++) {
+          arena.a1Grid[i] = rng.nextF64() < p * 4.5 ? (rng.nextBool() ? 1 : 2) : 0;
+        }
+        const pl3 = Math.min(0.45, 0.08 * Math.pow(p / pTh, 2));
+        const pl5 = Math.min(0.45, 0.08 * Math.pow(p / pTh, 3));
+        const pl7 = Math.min(0.45, 0.08 * Math.pow(p / pTh, 4));
+        arena.a1Surv3 *= (1 - pl3);
+        arena.a1Surv5 *= (1 - pl5);
+        arena.a1Surv7 *= (1 - pl7);
+        if (arena.a1Surv3 < 0.06 && arena.a1Surv7 < 0.06) {
+          arena.a1Surv3 = 1; arena.a1Surv5 = 1; arena.a1Surv7 = 1;
+        }
+        pushRing(arena.a1Trace3, [arena.simTime, arena.a1Surv3], 150);
+        pushRing(arena.a1Trace5, [arena.simTime, arena.a1Surv5], 150);
+        pushRing(arena.a1Trace7, [arena.simTime, arena.a1Surv7], 150);
+      }
+      return;
+    }
+    if (mod === "A2") {
+      arena.accum += dt * 16;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        const dl = 0.08;
+        const np = rng.nextGauss() * ws.a2Noise, nm = rng.nextGauss() * ws.a2Noise;
+        const [, ep] = h2MorseAndVar(ws.a2BondR, arena.a2Theta + dl);
+        const [, em] = h2MorseAndVar(ws.a2BondR, arena.a2Theta - dl);
+        const grad = ((ep + np) - (em + nm)) / (2 * dl);
+        arena.a2Theta = Math.max(-Math.PI, Math.min(Math.PI, arena.a2Theta - 0.16 * grad));
+        const [, ec] = h2MorseAndVar(ws.a2BondR, arena.a2Theta);
+        pushRing(arena.a2TraceE, [arena.simTime, ec], 150);
+      }
+      return;
+    }
+    if (mod === "A3") {
+      const edges = [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,0],[0,4],[1,5],[2,6],[3,7]];
+      const res = Math.abs(Math.sin(ws.a3Gamma * Math.PI * 0.5));
+      const betaT = 0.35 + 0.55 * ws.a3DepthP * res;
+      arena.accum += dt * 28;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        let pickM = 0, pickC = 0;
+        for (let tr = 0; tr < 8; tr++) {
+          const cand = rng.nextInt(256);
+          let cut = 0;
+          for (const [u, v] of edges) if (((cand >> u) & 1) !== ((cand >> v) & 1)) cut++;
+          pickM = cand; pickC = cut;
+          if (rng.nextF64() <= Math.exp(betaT * (cut - 10))) break;
+        }
+        arena.a3Mask = pickM;
+        arena.a3CutBins[Math.min(10, pickC)] += 1;
+      }
+      const tot = arena.a3CutBins.reduce((a, b) => a + b, 0);
+      if (tot > 0) {
+        let sum = 0;
+        for (let c = 0; c <= 10; c++) sum += c * arena.a3CutBins[c];
+        pushRing(arena.a3TraceR, [arena.simTime, (sum / tot) / 10], 150);
+      }
+      return;
+    }
+    if (mod === "A4") {
+      arena.a4Items.forEach(it => { it.x += dt * 0.9; });
+      arena.a4Items = arena.a4Items.filter(it => it.x < 1.0);
+      const pin = ws.a4RawP;
+      arena.accum += dt * 30;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        arena.a4Batches++;
+        let errs = 0;
+        for (let i = 0; i < 15; i++) if (rng.nextF64() < pin) errs++;
+        let status = 2; // 0=ok, 1=undetected err, 2=syndrome abort
+        if (errs === 0) { arena.a4Ok++; status = 0; }
+        else if (errs >= 3 && rng.nextF64() < (35 / 455)) { arena.a4Err++; status = 1; }
+        else { arena.a4Abort++; status = 2; }
+        if (arena.a4Items.length < 32) arena.a4Items.push({ x: 0, status });
+      }
+      const outTot = arena.a4Ok + arena.a4Err;
+      const thOut = 35 * Math.pow(pin, 3) * 100;
+      const empOut = outTot > 20 ? (arena.a4Err / outTot) * 100 : thOut;
+      pushRing(arena.a4TraceOut, [arena.simTime, empOut], 150);
+      return;
+    }
+    if (mod === "Q1") {
+      const ox = ws.q1Omega * Math.cos(ws.q1Azimuth);
+      const oy = ws.q1Omega * Math.sin(ws.q1Azimuth);
+      const oz = ws.q1Detune;
+      let mx = 0, my = 0, mz = 0;
+      for (const w of arena.q1Walkers) {
+        const cx = oy * w[2] - oz * w[1];
+        const cy = oz * w[0] - ox * w[2];
+        const cz = ox * w[1] - oy * w[0];
+        // Continuous diffusive dephasing jitter + coherent precession
+        w[0] += cx * dt + rng.nextGauss() * Math.sqrt(0.04 * ws.q1JumpRate * dt);
+        w[1] += cy * dt + rng.nextGauss() * Math.sqrt(0.04 * ws.q1JumpRate * dt);
+        w[2] += cz * dt;
+        w[3] = Math.max(0, w[3] - dt * 2.5);
+        const pJump = ws.q1JumpRate * 0.5 * Math.max(0, 1 - w[2]) * dt;
+        if (rng.nextF64() < pJump) {
+          w[0] = 0; w[1] = 0; w[2] = 1; w[3] = 1.0;
+          arena.q1Jumps++;
+          arena.events++;
+        } else {
+          const nrm = Math.hypot(w[0], w[1], w[2]) || 1;
+          w[0] /= nrm; w[1] /= nrm; w[2] /= nrm;
+        }
+        mx += w[0]; my += w[1]; mz += w[2];
+      }
+      const inv = 1 / arena.q1Walkers.length;
+      pushRing(arena.q1TraceX, [arena.simTime, mx * inv], 160);
+      pushRing(arena.q1TraceY, [arena.simTime, my * inv], 160);
+      pushRing(arena.q1TraceZ, [arena.simTime, mz * inv], 160);
+    }
+    else if (mod === "Q2") {
+      const nQ = ws.q2Preset === "bell" ? 2 : ws.q2Preset === "ghz" ? 4 : 3;
+      const dim = 1 << nQ;
+      if (arena.q2Counts.length !== dim) rebuildQ2Ideal();
+
+      arena.q2Packets.forEach(p => { p.x += dt * 1.15; });
+      arena.q2Packets = arena.q2Packets.filter(p => p.x < 1.0);
+      arena.q2Sparks.forEach(s => { s.ttl -= dt * 2.2; });
+      arena.q2Sparks = arena.q2Sparks.filter(s => s.ttl > 0);
+
+      arena.accum += dt * 28;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        arena.q2Packets.push({ x: 0, q: rng.nextInt(nQ) });
+        // Sample ideal outcome, then apply per-gate stochastic depolarizing flips
+        const u = rng.nextF64();
+        let acc = 0, pick = 0;
+        for (let i = 0; i < dim; i++) { acc += arena.q2Ideal[i]; if (u <= acc) { pick = i; break; } }
+        const nGates = nQ + 2;
+        for (let g = 0; g < nGates; g++) {
+          if (rng.nextF64() < ws.q2GateFault) {
+            const fq = rng.nextInt(nQ);
+            if (rng.nextF64() < 0.67) pick ^= (1 << fq);
+            arena.q2Sparks.push({ q: fq, col: g / nGates, ttl: 1.0 });
+          }
+        }
+        arena.q2Counts[pick] += 1;
+      }
+    }
+    else if (mod === "Q3") {
+      const th = ws.q3Theta + Math.sin(arena.simTime * ws.q3Drift) * 0.45 * (ws.q3Drift > 0.02 ? 1 : 0);
+      const ph = ws.q3Phi + arena.simTime * ws.q3Drift * 0.7;
+      const src = [Math.sin(th) * Math.cos(ph), Math.sin(th) * Math.sin(ph), Math.cos(th)];
+      arena.q3CurSrc = src;
+
+      arena.q3Flight += dt * 1.65;
+      if (arena.q3Flight >= 1.0) {
+        arena.q3Flight -= 1.0;
+        arena.events++;
+        arena.q3Bell = [rng.nextBool() ? 1 : 0, rng.nextBool() ? 1 : 0];
+        let bob = src.slice();
+        if (rng.nextF64() < ws.q3Depol) {
+          const ax = rng.nextInt(3);
+          if (ax === 0) bob = [src[0], -src[1], -src[2]];
+          else if (ax === 1) bob = [-src[0], src[1], -src[2]];
+          else bob = [-src[0], -src[1], src[2]];
+        }
+        pushRing(arena.q3Cloud, bob, 72);
+        const dot = src[0]*bob[0] + src[1]*bob[1] + src[2]*bob[2];
+        arena.q3FidSum += 0.5 * (1 + dot);
+        arena.q3FidCnt += 1;
+      }
+    }
+    else if (mod === "Q4") {
+      const rate = ws.q4DecohRate;
+      for (const w of arena.q4Walkers) {
+        if (ws.q4Channel === "T1") {
+          if (rng.nextF64() < rate * dt) { w[0] = 0; w[1] = 0; w[2] = 1; }
+          else {
+            w[0] *= (1 - 0.5 * rate * dt);
+            w[1] *= (1 - 0.5 * rate * dt);
+            w[2] = Math.min(1, w[2] + rate * dt * 0.6);
+          }
+        } else if (ws.q4Channel === "T2") {
+          const dphi = rng.nextGauss() * Math.sqrt(2 * rate * dt);
+          const nx = w[0] * Math.cos(dphi) - w[1] * Math.sin(dphi);
+          const ny = w[0] * Math.sin(dphi) + w[1] * Math.cos(dphi);
+          w[0] = nx; w[1] = ny;
+        } else {
+          if (rng.nextF64() < rate * dt) {
+            const t = Math.acos(2 * rng.nextF64() - 1), p = 2 * Math.PI * rng.nextF64();
+            w[0] = Math.sin(t)*Math.cos(p); w[1] = Math.sin(t)*Math.sin(p); w[2] = Math.cos(t);
+          }
+        }
+      }
+      arena.accum += dt * 10;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        const p = ws.q4PhysP;
+        const f0 = rng.nextF64() < p ? 1 : 0;
+        const f1 = rng.nextF64() < p ? 1 : 0;
+        const f2 = rng.nextF64() < p ? 1 : 0;
+        arena.q4FaultBits = [f0, f1, f2];
+        arena.q4Syndrome = [f0 ^ f1, f1 ^ f2];
+        if (f0) arena.q4UnencSurv *= 0.94;
+        if (f0 + f1 + f2 >= 2) arena.q4CodedSurv *= 0.94;
+        if (arena.q4UnencSurv < 0.04 && arena.q4CodedSurv < 0.15) {
+          arena.q4UnencSurv = 1.0; arena.q4CodedSurv = 1.0;
+        }
+        pushRing(arena.q4TraceU, [arena.simTime, arena.q4UnencSurv], 150);
+        pushRing(arena.q4TraceC, [arena.simTime, arena.q4CodedSurv], 150);
+      }
+    }
+    else if (mod === "D1") {
+      const d = ws.d1Dim;
+      if (arena.d1Coinc.length !== d * d) arena.d1Coinc = new Float64Array(d * d);
+      arena.d1Pulses.forEach(p => { p.x += dt * 0.85; });
+      arena.d1Pulses = arena.d1Pulses.filter(p => p.x < 1.0);
+      arena.accum += dt * 24;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        const j = rng.nextInt(d);
+        let k = (j + ws.d1ShiftA) % d;
+        const noisy = rng.nextF64() < ws.d1Crosstalk;
+        if (noisy) k = rng.nextInt(d);
+        arena.d1Coinc[j * d + k] += 1;
+        arena.d1Pulses.push({ x: 0, laneA: j, laneB: k, noisy });
+      }
+    }
+    else if (mod === "K1") {
+      arena.k1Photons.forEach(p => { p.x += dt * 0.72; });
+      arena.k1Photons = arena.k1Photons.filter(p => p.x < 1.0);
+      arena.accum += dt * 22;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        const aBit = rng.nextBool() ? 1 : 0;
+        const aBas = rng.nextBool() ? 1 : 0;
+        const eveInt = rng.nextF64() < ws.k1Eve;
+        const eBas = rng.nextBool() ? 1 : 0;
+        let txBit = aBit, txBas = aBas;
+        if (eveInt) {
+          txBit = (eBas === aBas) ? aBit : (rng.nextBool() ? 1 : 0);
+          txBas = eBas;
+        }
+        const bBas = rng.nextBool() ? 1 : 0;
+        let bBit = (bBas === txBas) ? txBit : (rng.nextBool() ? 1 : 0);
+        if (rng.nextF64() < ws.k1Noise) bBit ^= 1;
+        const keep = aBas === bBas;
+        const err = keep && (aBit !== bBit);
+        if (keep) {
+          arena.k1Sifted++;
+          if (err) arena.k1Errs++;
+          pushRing(arena.k1Tape, { bit: bBit, err }, 26);
+        }
+        arena.k1Photons.push({ x: 0, aBas, eveInt, keep, err });
+      }
+      if (arena.k1Sifted > 0) {
+        pushRing(arena.k1QberTrace, [arena.simTime, (arena.k1Errs / arena.k1Sifted) * 100], 160);
+      }
+    }
+    else if (mod === "K2") {
+      arena.k2Pairs.forEach(p => { p.r += dt * 1.1; });
+      arena.k2Pairs = arena.k2Pairs.filter(p => p.r < 1.0);
+      const aAng = [0, Math.PI / 4, Math.PI / 2];
+      const bAng = [Math.PI / 4, Math.PI / 2, 3 * Math.PI / 4];
+      arena.accum += dt * 36;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        const ia = rng.nextInt(3), ib = rng.nextInt(3);
+        const eveHit = rng.nextF64() < ws.k2Eve;
+        let sa = 1, sb = -1;
+        if (eveHit) {
+          const phi = rng.nextF64() * Math.PI;
+          const eo = rng.nextBool() ? 1 : -1;
+          sa = rng.nextF64() < 0.5 * (1 + ws.k2Vis * eo * Math.cos(aAng[ia] - phi)) ? 1 : -1;
+          sb = rng.nextF64() < 0.5 * (1 - ws.k2Vis * eo * Math.cos(bAng[ib] - phi)) ? 1 : -1;
+        } else {
+          sa = rng.nextBool() ? 1 : -1;
+          const c = -ws.k2Vis * Math.cos(aAng[ia] - bAng[ib]);
+          sb = rng.nextF64() < Math.max(0, Math.min(1, 0.5 * (1 + c))) ? sa : -sa;
+        }
+        arena.k2Sum[ia][ib] += sa * sb;
+        arena.k2Cnt[ia][ib] += 1;
+        if (arena.k2Pairs.length < 28) arena.k2Pairs.push({ r: 0, ia, ib, eveHit });
+      }
+      const E = (r, c) => arena.k2Cnt[r][c] > 0 ? arena.k2Sum[r][c] / arena.k2Cnt[r][c] : 0;
+      const sVal = Math.abs(E(0,0) - E(0,2) + E(2,0) + E(2,2));
+      pushRing(arena.k2TraceS, [arena.simTime, sVal], 160);
+    }
+    else if (mod === "K3") {
+      const sin2 = Math.pow(Math.sin(ws.k3Angle * Math.PI / 180), 2);
+      arena.k3Pulses.forEach(p => { p.x += dt * 0.85; });
+      arena.k3Pulses = arena.k3Pulses.filter(p => p.x < 1.0);
+      arena.accum += dt * 28;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        const aBit = rng.nextBool() ? 1 : 0;
+        let txBit = aBit;
+        if (rng.nextF64() < ws.k3Eve) {
+          const et = rng.nextBool() ? 1 : 0;
+          txBit = (et !== aBit && rng.nextF64() < sin2) ? aBit : (rng.nextBool() ? 1 : 0);
+        }
+        const bTest = rng.nextBool() ? 1 : 0;
+        const conc = (bTest === txBit) && (rng.nextF64() < sin2);
+        const err = conc && (bTest !== aBit);
+        if (conc) { arena.k3Conc++; if (err) arena.k3Errs++; } else arena.k3Erase++;
+        arena.k3Pulses.push({ x: 0, aBit, port: conc ? bTest : 2, err });
+      }
+      const tot = arena.k3Conc + arena.k3Erase;
+      if (tot > 0) pushRing(arena.k3TraceY, [arena.simTime, (arena.k3Conc / tot) * 100], 160);
+    }
+    else if (mod === "C1") {
+      if (!arena.c1Spectrum) rebuildC1Spectrum();
+      const spec = arena.c1Spectrum;
+      const nb = arena.c1Bins.length;
+      const csz = Math.max(1, Math.floor(spec.length / nb));
+      arena.c1Drops.forEach(d => { d.y += dt * 1.6; });
+      arena.c1Drops = arena.c1Drops.filter(d => d.y < 1.0);
+
+      arena.accum += dt * 30;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        const u = rng.nextF64();
+        let cdf = 0, pick = 0;
+        for (let i = 0; i < spec.length; i++) { cdf += spec[i]; if (u <= cdf) { pick = i; break; } }
+        const bi = Math.min(nb - 1, Math.floor(pick / csz));
+        arena.c1Bins[bi] += 1;
+        if (arena.c1Drops.length < 32) arena.c1Drops.push({ bin: bi / nb, y: 0 });
+      }
+    }
+    else if (mod === "C2") {
+      const space = 1 << ws.c2Bits;
+      if (arena.c2Probs.length !== space) arena.c2Probs = new Float64Array(space);
+      const theta0 = Math.asin(1 / Math.sqrt(space));
+      arena.c2StepFloat += dt * 2.2;
+      arena.events = Math.floor(arena.c2StepFloat);
+      // Continuous Grover rotation angle + stochastic phase damping
+      const damp = Math.exp(-ws.c2Dephase * (arena.c2StepFloat % 18));
+      const ang = ((2 * (arena.c2StepFloat % 18) + 1) * theta0);
+      arena.c2Angle = ang;
+      const pTarget = Math.min(1, Math.max(0, (1 / space) + damp * (Math.pow(Math.sin(ang), 2) - (1 / space))));
+      const pOther = (1 - pTarget) / Math.max(1, space - 1);
+      const kt = ws.c2Secret % space;
+      for (let i = 0; i < space; i++) arena.c2Probs[i] = (i === kt) ? pTarget : pOther;
+      pushRing(arena.c2History, [arena.simTime, pTarget * 100], 160);
+    }
+    else if (mod === "C3") {
+      const Q = 3329;
+      const profMap = { "ped16": [16, 2], "512": [64, 2], "768": [64, 3], "1024": [64, 4] };
+      const [nSim, k] = profMap[ws.c3Profile] || [64, 3];
+      const eta = ws.c3Eta;
+      const cbd = () => {
+        let a = 0, b = 0;
+        for (let i = 0; i < eta; i++) { a += rng.nextBool() ? 1 : 0; b += rng.nextBool() ? 1 : 0; }
+        return a - b;
+      };
+
+      arena.accum += dt * 16;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        arena.c3Handshakes++;
+        // Exact distribution of 1 polynomial slot of (e^T r + e2 - s^T e1) across rank k * degree 256
+        const effTerms = ws.c3Profile === "ped16" ? 16 * k : 256 * k;
+        let maxAbs = 0;
+        for (let slot = 0; slot < Math.min(nSim, 24); slot++) {
+          let acc = cbd();
+          // Central limit / exact sum of 2*effTerms products of independent CBD_eta variables (Var(CBD_eta) = eta/2)
+          // Var(prod) = (eta/2)^2 => total std = sqrt(2 * effTerms) * (eta / 2)
+          const std = Math.sqrt(2 * effTerms) * (eta * 0.5);
+          acc += Math.round(rng.nextGauss() * std);
+          const centered = (((acc % Q) + Q) % Q);
+          const cVal = centered > 1664 ? centered - Q : centered;
+          if (Math.abs(cVal) > maxAbs) maxAbs = Math.abs(cVal);
+        }
+        arena.c3LastMax = maxAbs;
+        if (maxAbs > 832) arena.c3Failures++;
+        pushRing(arena.c3NoiseTrace, [arena.simTime, maxAbs], 150);
+
+        const b1 = [4.0, 1.1], b2 = [1.3, 3.6];
+        const ex = [2 * b1[0] - b2[0], 2 * b1[1] - b2[1]];
+        const spread = 0.13 * eta;
+        pushRing(arena.c3Cloud, [ex[0] + rng.nextGauss() * spread, ex[1] + rng.nextGauss() * spread], 95);
+      }
+    }
+    else if (mod === "C4") {
+      const g1 = ws.c4Gamma1, eta = ws.c4Eta, tau = ws.c4Tau;
+      const beta = tau * eta;
+      const safe = Math.max(4, g1 - beta);
+      const bmax = g1 + beta;
+
+      arena.c4Particles.forEach(p => { p.y += dt * 1.45; });
+      arena.c4Particles = arena.c4Particles.filter(p => p.y < 1.0);
+
+      arena.accum += dt * 45;
+      while (arena.accum >= 1) {
+        arena.accum -= 1;
+        arena.events++;
+        arena.c4Trials++;
+        let ok = true, z0 = 0;
+        for (let i = 0; i < 16; i++) {
+          const s = rng.nextInt(2 * eta + 1) - eta;
+          const y = rng.nextInt(2 * g1) - g1 + 1;
+          const cs = Math.max(-beta, Math.min(beta, s * rng.nextInt(tau + 1)));
+          const z = y + cs;
+          if (i === 0) z0 = z;
+          if (Math.abs(z) >= safe) ok = false;
+        }
+        const bi = Math.max(0, Math.min(20, Math.floor(((z0 + bmax) / Math.max(1, 2 * bmax)) * 21)));
+        arena.c4RawBins[bi] += 1;
+        if (ok) {
+          arena.c4Acc++;
+          arena.c4AccBins[bi] += 1;
+          if (arena.c4Acc % 12 === 0) {
+            arena.c4MerkleTip = sha256HexStr(arena.c4MerkleTip + ":" + z0).slice(0, 24);
+          }
+        }
+        if (arena.c4Particles.length < 40) {
+          arena.c4Particles.push({ xNorm: (z0 + bmax) / Math.max(1, 2 * bmax), y: 0, ok });
+        }
+      }
+    }
+  }
+
+  // =========================================================================
+  // 5. High-DPI Canvas Renderers
+  // =========================================================================
+  function prepCanvas(canvas, cssHeight) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(230, canvas.parentElement.clientWidth - 16);
+    const h = cssHeight;
+    if (canvas.style.height !== h + "px") canvas.style.height = h + "px";
+    const tw = Math.round(w * dpr), th = Math.round(h * dpr);
+    if (canvas.width !== tw || canvas.height !== th) {
+      canvas.width = tw; canvas.height = th;
+    }
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    return { ctx, w, h };
+  }
+
+  function drawBlochCloud(canvas, mean, walkers, targetVec) {
+    if (!canvas) return;
+    const { ctx, w, h } = prepCanvas(canvas, 270);
+    const cx = w * 0.5, cy = h * 0.51;
+    const rad = Math.min(w, h) * 0.37;
+    const cyaw = Math.cos(blochYaw), syaw = Math.sin(blochYaw);
+    const cp = Math.cos(blochPitch), sp = Math.sin(blochPitch);
+    const proj = (p) => {
+      const rx = -syaw * p[0] + cyaw * p[1];
+      const ry = cyaw * p[0] + syaw * p[1];
+      return [cx + rx * rad, cy + (-cp * p[2] + sp * ry) * rad];
+    };
+
+    ctx.strokeStyle = "#3c5278"; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.stroke();
+
+    ctx.strokeStyle = "#1f2d45"; ctx.lineWidth = 1;
+    for (let ring = 0; ring < 3; ring++) {
+      ctx.beginPath();
+      for (let k = 0; k <= 56; k++) {
+        const t = (k / 56) * Math.PI * 2;
+        const pt = ring === 0 ? [Math.cos(t), Math.sin(t), 0]
+                 : ring === 1 ? [Math.cos(t), 0, Math.sin(t)]
+                 : [0, Math.cos(t), Math.sin(t)];
+        const [sx, sy] = proj(pt);
+        if (k === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+      }
+      ctx.stroke();
+    }
+
+    ctx.font = "11px JetBrains Mono, monospace";
+    ctx.fillStyle = "#92a5c2"; ctx.strokeStyle = "#314563";
+    for (const [n, p, ln, lp] of [[[-1,0,0],[1,0,0],"|-⟩","|+⟩"],[[0,-1,0],[0,1,0],"|-i⟩","|+i⟩"],[[0,0,-1],[0,0,1],"|1⟩","|0⟩"]]) {
+      const pn = proj(n), pp = proj(p);
+      ctx.beginPath(); ctx.moveTo(pn[0], pn[1]); ctx.lineTo(pp[0], pp[1]); ctx.stroke();
+      ctx.fillText(lp, pp[0] + 4, pp[1] - 3);
+      ctx.fillText(ln, pn[0] + 4, pn[1] + 11);
+    }
+
+    for (const wk of walkers) {
+      const [wx, wy] = proj(wk);
+      const flash = wk[3] || 0;
+      ctx.fillStyle = flash > 0.15 ? "#fbbf24" : "rgba(167, 139, 250, 0.72)";
+      ctx.beginPath(); ctx.arc(wx, wy, flash > 0.15 ? 4.8 : 2.9, 0, Math.PI * 2); ctx.fill();
+    }
+
+    if (targetVec) {
+      const [tx, ty] = proj(targetVec);
+      ctx.strokeStyle = "#fbbf24"; ctx.lineWidth = 2.2;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(tx, ty); ctx.stroke();
+      ctx.fillStyle = "#fbbf24"; ctx.beginPath(); ctx.arc(tx, ty, 4.8, 0, Math.PI * 2); ctx.fill();
+    }
+
+    const [vx, vy] = proj(mean);
+    ctx.strokeStyle = "#38bdf8"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(vx, vy); ctx.stroke();
+    ctx.fillStyle = "#38bdf8"; ctx.beginPath(); ctx.arc(vx, vy, 5.2, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawLinePlot(canvas, xRange, yRange, series, thresholds) {
+    if (!canvas) return;
+    const { ctx, w, h } = prepCanvas(canvas, 195);
+    const padL = 48, padR = 24, padT = 18, padB = 24;
+    const pw = w - padL - padR, ph = h - padT - padB;
+    const dx = Math.max(1e-6, xRange[1] - xRange[0]);
+    const dy = Math.max(1e-6, yRange[1] - yRange[0]);
+    const toX = (x) => padL + Math.max(0, Math.min(1, (x - xRange[0]) / dx)) * pw;
+    const toY = (y) => padT + (1 - Math.max(0, Math.min(1, (y - yRange[0]) / dy))) * ph;
+
+    ctx.strokeStyle = "#1f2d45"; ctx.fillStyle = "#8ea2c0";
+    ctx.font = "10px JetBrains Mono, monospace";
+    for (let g = 0; g <= 4; g++) {
+      const f = g * 0.25;
+      const y = padT + ph * (1 - f);
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + pw, y); ctx.stroke();
+      const yv = yRange[0] + f * dy;
+      ctx.textAlign = "left";
+      ctx.fillText(Math.abs(yv) >= 100 ? yv.toFixed(0) : yv.toFixed(2), 4, y + 3);
+      const xv = xRange[0] + f * dx;
+      ctx.textAlign = g === 0 ? "left" : (g === 4 ? "right" : "center");
+      ctx.fillText(xv.toFixed(1), padL + f * pw, h - 6);
+    }
+    ctx.textAlign = "left";
+
+    for (const th of (thresholds || [])) {
+      if (th.y >= yRange[0] && th.y <= yRange[1]) {
+        const y = toY(th.y);
+        ctx.strokeStyle = th.color; ctx.setLineDash([5, 4]);
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + pw, y); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = th.color; ctx.fillText(th.label, padL + 6, y - 4);
+      }
+    }
+
+    let legX = padL;
+    for (const s of series) {
+      if (s.pts.length >= 2) {
+        ctx.strokeStyle = s.color; ctx.lineWidth = 2.1;
+        ctx.beginPath();
+        s.pts.forEach(([x, y], i) => {
+          const sx = toX(x), sy = toY(y);
+          if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+        });
+        ctx.stroke();
+      }
+      ctx.fillStyle = s.color;
+      ctx.fillText("■ " + s.label, legX, 12);
+      legX += s.label.length * 6.4 + 22;
+    }
+  }
+
+  function drawBars(canvas, labels, vals, overlayIdeal, colorHex) {
+    if (!canvas) return;
+    const { ctx, w, h } = prepCanvas(canvas, 195);
+    const padL = 42, padR = 14, padT = 14, padB = 24;
+    const pw = w - padL - padR, ph = h - padT - padB;
+    const n = Math.max(1, Math.min(64, vals.length));
+    let maxV = 0.01;
+    for (let i = 0; i < n; i++) if (vals[i] > maxV) maxV = vals[i];
+    if (overlayIdeal) for (let i = 0; i < n; i++) if (overlayIdeal[i] > maxV) maxV = overlayIdeal[i];
+
+    ctx.strokeStyle = "#1f2d45"; ctx.fillStyle = "#8ea2c0";
+    ctx.font = "10px JetBrains Mono, monospace";
+    for (let g = 0; g <= 4; g++) {
+      const f = g * 0.25;
+      const y = padT + ph * (1 - f);
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + pw, y); ctx.stroke();
+      ctx.fillText(((f * maxV) * 100).toFixed(0) + "%", 4, y + 3);
+    }
+
+    const slotW = pw / n;
+    const barW = Math.max(2, Math.min(34, slotW * 0.72));
+    const stride = n <= 16 ? 1 : n <= 32 ? 2 : 4;
+    for (let i = 0; i < n; i++) {
+      const xc = padL + (i + 0.5) * slotW;
+      const bh = (vals[i] / maxV) * ph;
+      ctx.fillStyle = colorHex || "#38bdf8";
+      if (bh > 0.5) ctx.fillRect(xc - barW * 0.5, padT + ph - bh, barW, bh);
+      if (overlayIdeal && overlayIdeal[i] > 0) {
+        const ih = (overlayIdeal[i] / maxV) * ph;
+        ctx.strokeStyle = "#fbbf24"; ctx.lineWidth = 1.4;
+        ctx.strokeRect(xc - barW * 0.5, padT + ph - ih, barW, ih);
+      }
+      if (i % stride === 0 && labels[i]) {
+        ctx.fillStyle = "#8ea2c0";
+        ctx.textAlign = "center";
+        ctx.fillText(labels[i], xc, h - 6);
+      }
+    }
+    ctx.textAlign = "left";
+  }
+
+  // =========================================================================
+  // 6. Module Scaffold Builder (Built ONLY on Module Switch, Not per Frame!)
+  // =========================================================================
+  function sliderHtml(id, label, min, max, step, val, unit) {
+    return `
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span>${label}</span><span class="ctrl-val" id="val-${id}">${val}${unit || ""}</span></div>
+        <input type="range" data-slider="${id}" data-unit="${unit || ""}" min="${min}" max="${max}" step="${step}" value="${val}" />
+      </div>`;
+  }
+
+  function renderHub() {
+    const hub = document.getElementById("hub-view");
+    let html = `
+      <div class="card-box" style="margin-bottom:12px;">
+        <div style="font-size:16px;font-weight:700;color:var(--cyan);">QuantaCrypt Studio v2.0.0 — Passive Stochastic Quantum &amp; Cryptography Observatory</div>
+        <div style="color:var(--text-muted);margin-top:3px;">
+          Select any module to watch continuous 60 FPS Monte-Carlo quantum trajectories, flying polarized photons, entangled singlet streams, inverse-QFT shots, and Module-LWE lattice clouds respond immediately to your parameter sliders.
+        </div>
+      </div>`;
+    for (const grp of GROUPS) {
+      html += `<div class="hub-group-title">${escHtml(grp.title)}</div><div class="hub-grid">`;
+      for (const m of MODULES.filter(x => x.group === grp.id)) {
+        html += `
+          <div class="hub-card">
+            <div>
+              <strong>[${m.code}] ${escHtml(m.title)}</strong>
+              <div style="color:var(--text-muted);font-size:12.5px;margin-top:5px;">${escHtml(m.summary)}</div>
+            </div>
+            <div>
+              <div class="eq-banner" style="font-size:11px;margin-bottom:8px;">${escHtml(m.equation)}</div>
+              <button type="button" class="btn btn-active" data-action="pick-mod" data-mod="${m.code}">Observe [${m.code}] Stream →</button>
+            </div>
+          </div>`;
+      }
+      html += `</div>`;
+    }
+    hub.innerHTML = html;
+  }
+
+  function buildModuleScaffold() {
+    const mod = MODULES.find(m => m.code === ws.activeModule) || MODULES[0];
+    const dock = document.getElementById("left-controls");
+    const stage = document.getElementById("center-stage");
+    const c = mod.code;
+    let ctrl = "";
+
+    if (c === "I1") {
+      ctrl += sliderHtml("i1Sep", "Slit Separation d / lambda", 2.0, 8.5, 0.25, ws.i1Sep.toFixed(2), "");
+      ctrl += sliderHtml("i1Path", "Which-Path Detector Coupling", 0.0, 1.0, 0.02, ws.i1Path.toFixed(2), "");
+    } else if (c === "I2") {
+      ctrl += sliderHtml("i2Phase", "Upper-Arm Phase Shifter phi", 0.0, 6.28, 0.05, ws.i2Phase.toFixed(2), " rad");
+      ctrl += `<label style="display:flex;align-items:center;gap:7px;cursor:pointer;margin-top:4px;">
+        <input type="checkbox" data-toggle="i2Block" ${ws.i2Block ? "checked" : ""} />
+        <span>Insert Lower-Arm Obstacle (Interaction-Free Mode)</span>
+      </label>`;
+    } else if (c === "I3") {
+      ctrl += `<label style="display:flex;align-items:center;gap:7px;cursor:pointer;">
+        <input type="checkbox" data-toggle="i3Filter" ${ws.i3Filter ? "checked" : ""} />
+        <span>Insert Intermediate SG2(theta) Magnet</span>
+      </label>`;
+      ctrl += sliderHtml("i3Angle", "Intermediate Magnet Angle theta", 0, 180, 2, ws.i3Angle, "°");
+    } else if (c === "I4") {
+      ctrl += sliderHtml("i4Stages", "Intermediate Polarizer Stages N", 1, 32, 1, ws.i4Stages, "");
+    } else if (c === "Q1") {
+      ctrl += sliderHtml("q1Omega", "Rabi Drive Rate Omega", 0.2, 5.0, 0.1, ws.q1Omega.toFixed(1), " rad/s");
+      ctrl += sliderHtml("q1Azimuth", "Drive Axis Azimuth", -3.14, 3.14, 0.05, ws.q1Azimuth.toFixed(2), " rad");
+      ctrl += sliderHtml("q1Detune", "Z Detuning Delta_z", -2.5, 2.5, 0.1, ws.q1Detune.toFixed(1), " rad/s");
+      ctrl += sliderHtml("q1JumpRate", "Spontaneous Jump Rate gamma", 0.0, 2.0, 0.05, ws.q1JumpRate.toFixed(2), " /s");
+    } else if (c === "Q2") {
+      ctrl += `
+        <div class="ctrl-row">
+          <span class="ctrl-label">Quantum Circuit Topology</span>
+          <select data-select="q2Preset" class="mod-select" style="max-width:100%;">
+            <option value="bell" ${ws.q2Preset==="bell"?"selected":""}>2-Qubit Bell Pair |Phi+⟩</option>
+            <option value="ghz" ${ws.q2Preset==="ghz"?"selected":""}>4-Qubit GHZ Cat State</option>
+            <option value="qft" ${ws.q2Preset==="qft"?"selected":""}>3-Qubit Quantum Fourier Transform</option>
+          </select>
+        </div>
+        ${sliderHtml("q2GateFault", "Per-Gate Depolarizing Fault Rate", 0.0, 0.30, 0.01, ws.q2GateFault.toFixed(2), "")}`;
+    } else if (c === "Q3") {
+      ctrl += sliderHtml("q3Theta", "Payload Polar theta", 0.1, 3.04, 0.05, ws.q3Theta.toFixed(2), " rad");
+      ctrl += sliderHtml("q3Phi", "Payload Azimuth phi", -3.14, 3.14, 0.05, ws.q3Phi.toFixed(2), " rad");
+      ctrl += sliderHtml("q3Drift", "Autonomous Target Precession", 0.0, 1.5, 0.05, ws.q3Drift.toFixed(2), "x");
+      ctrl += sliderHtml("q3Depol", "EPR Fiber Depolarizing Noise p", 0.0, 0.50, 0.01, ws.q3Depol.toFixed(2), "");
+    } else if (c === "Q4") {
+      ctrl += `
+        <div class="ctrl-row">
+          <span class="ctrl-label">Open-System Bath Coupling</span>
+          <select data-select="q4Channel" class="mod-select" style="max-width:100%;">
+            <option value="T1" ${ws.q4Channel==="T1"?"selected":""}>T1 Amplitude Damping (Spontaneous Decay)</option>
+            <option value="T2" ${ws.q4Channel==="T2"?"selected":""}>T2 Pure Dephasing (Phase Diffusion)</option>
+            <option value="depol" ${ws.q4Channel==="depol"?"selected":""}>Isotropic Depolarizing Kick</option>
+          </select>
+        </div>
+        ${sliderHtml("q4DecohRate", "Bath Decoherence Rate gamma", 0.05, 1.8, 0.05, ws.q4DecohRate.toFixed(2), " /s")}
+        ${sliderHtml("q4PhysP", "3-Qubit Stabilizer Cycle Fault p", 0.01, 0.40, 0.01, ws.q4PhysP.toFixed(2), "")}`;
+    } else if (c === "D1") {
+      ctrl += sliderHtml("d1Dim", "Qudit Local Dimension d", 2, 8, 1, ws.d1Dim, "");
+      ctrl += sliderHtml("d1ShiftA", "Weyl Shift Offset X_d^a", 0, ws.d1Dim - 1, 1, ws.d1ShiftA % ws.d1Dim, "");
+      ctrl += sliderHtml("d1Crosstalk", "Waveguide Crosstalk Noise", 0.0, 0.45, 0.01, ws.d1Crosstalk.toFixed(2), "");
+    } else if (c === "K1") {
+      ctrl += sliderHtml("k1Eve", "Eve Intercept-Resend Fraction", 0.0, 1.0, 0.02, ws.k1Eve.toFixed(2), "");
+      ctrl += sliderHtml("k1Noise", "Optical Fiber Flip Noise", 0.0, 0.15, 0.005, ws.k1Noise.toFixed(3), "");
+    } else if (c === "K2") {
+      ctrl += sliderHtml("k2Eve", "Eve Singlet Measurement Fraction", 0.0, 1.0, 0.02, ws.k2Eve.toFixed(2), "");
+      ctrl += sliderHtml("k2Vis", "Entangled Pair Visibility V", 0.65, 1.0, 0.01, ws.k2Vis.toFixed(2), "");
+    } else if (c === "K3") {
+      ctrl += sliderHtml("k3Angle", "Non-Orthogonal State Angle theta", 10, 80, 1, ws.k3Angle, "°");
+      ctrl += sliderHtml("k3Eve", "Eve Opaque USD Attack Rate", 0.0, 1.0, 0.02, ws.k3Eve.toFixed(2), "");
+    } else if (c === "C1") {
+      ctrl += `
+        <div style="font-size:12px;color:var(--text-muted);">Target RSA Semiprime N = p * q:</div>
+        <div class="pill-row">
+          ${[15,21,33,35,55,77,91,143].map(sp =>
+            `<button type="button" class="btn ${ws.c1ModN===sp?"btn-active":""}" data-action="c1-mod" data-n="${sp}">N=${sp}</button>`
+          ).join("")}
+        </div>
+        ${sliderHtml("c1BaseA", "Modular Base a", 2, ws.c1ModN - 1, 1, Math.min(ws.c1BaseA, ws.c1ModN - 1), "")}
+        ${sliderHtml("c1QubitsM", "QFT Frequency Register m", 6, 9, 1, ws.c1QubitsM, " qubits")}`;
+    } else if (c === "C2") {
+      ctrl += sliderHtml("c2Bits", "Cipher Key Space Bits n", 3, 6, 1, ws.c2Bits, " bits");
+      ctrl += sliderHtml("c2Secret", "Hidden Secret Key Index", 0, (1 << ws.c2Bits) - 1, 1, ws.c2Secret % (1 << ws.c2Bits), "");
+      ctrl += sliderHtml("c2Dephase", "Oracle Phase-Noise Damping", 0.0, 0.15, 0.005, ws.c2Dephase.toFixed(3), "");
+    } else if (c === "C3") {
+      ctrl += `
+        <div class="ctrl-row">
+          <span class="ctrl-label">NIST FIPS 203 Ring Profile</span>
+          <select data-select="c3Profile" class="mod-select" style="max-width:100%;">
+            <option value="ped16" ${ws.c3Profile==="ped16"?"selected":""}>Pedagogical Ring (n=16, k=2, q=3329)</option>
+            <option value="512" ${ws.c3Profile==="512"?"selected":""}>ML-KEM-512 (n=256, k=2, Cat 1)</option>
+            <option value="768" ${ws.c3Profile==="768"?"selected":""}>ML-KEM-768 (n=256, k=3, Cat 3)</option>
+            <option value="1024" ${ws.c3Profile==="1024"?"selected":""}>ML-KEM-1024 (n=256, k=4, Cat 5)</option>
+          </select>
+        </div>
+        ${sliderHtml("c3Eta", "Centered Binomial Noise Width eta", 1, 18, 1, ws.c3Eta, "")}
+        <div style="font-size:11.5px;color:var(--text-muted);">Slide <code>eta</code> above ~13 to watch stochastic decapsulation noise breach the crimson <code>q/4 = 832</code> barrier.</div>`;
+    } else if (c === "C4") {
+      ctrl += sliderHtml("c4Gamma1", "Mask Uniform Bound gamma_1", 48, 320, 8, ws.c4Gamma1, "");
+      ctrl += sliderHtml("c4Eta", "Secret Norm Bound eta", 1, 6, 1, ws.c4Eta, "");
+      ctrl += sliderHtml("c4Tau", "Challenge Sparse Weight tau", 2, 14, 1, ws.c4Tau, "");
+    } else if (c === "A1") {
+      ctrl += `<div style="font-size:12px;color:var(--text-muted);">Surface-Code Distance d:</div>
+        <div class="pill-row">
+          ${[3,5,7].map(d => `<button type="button" class="btn ${ws.a1Dist===d?"btn-active":""}" data-action="a1-dist" data-d="${d}">d = ${d} (${d*d}q)</button>`).join("")}
+        </div>`;
+      ctrl += sliderHtml("a1PhysP", "Physical Gate/Data Error p", 0.001, 0.025, 0.001, ws.a1PhysP.toFixed(3), "");
+    } else if (c === "A2") {
+      ctrl += sliderHtml("a2BondR", "H-H Internuclear Bond R", 0.35, 2.40, 0.05, ws.a2BondR.toFixed(2), " Å");
+      ctrl += sliderHtml("a2Noise", "Pauli Shot-Measurement Noise", 0.002, 0.10, 0.002, ws.a2Noise.toFixed(3), " Ha");
+    } else if (c === "A3") {
+      ctrl += sliderHtml("a3DepthP", "QAOA Alternating Layers p", 1, 6, 1, ws.a3DepthP, "");
+      ctrl += sliderHtml("a3Gamma", "Cost Phase Angle gamma", 0.10, 2.00, 0.05, ws.a3Gamma.toFixed(2), " rad");
+    } else if (c === "A4") {
+      ctrl += sliderHtml("a4RawP", "Raw |T⟩ Input Infidelity p_in", 0.002, 0.090, 0.002, ws.a4RawP.toFixed(3), "");
+    } else if (c === "Q5") {
+      ctrl += `<div style="font-size:12px;color:var(--text-muted);">Intermediate Repeater BSM Stations:</div>
+        <div class="pill-row">
+          ${[1,2,3,4].map(h => `<button type="button" class="btn ${ws.q5Hops===h?"btn-active":""}" data-action="q5-hops" data-h="${h}">${h} BSM${h>1?"s":""} (${h+1} links)</button>`).join("")}
+        </div>`;
+      ctrl += sliderHtml("q5LinkP", "Elementary Link Depolarizing p", 0.00, 0.22, 0.005, ws.q5LinkP.toFixed(3), "");
+      ctrl += `<label style="display:flex;align-items:center;gap:7px;cursor:pointer;margin-top:4px;">
+        <input type="checkbox" data-toggle="q5LinearOptics" ${ws.q5LinearOptics ? "checked" : ""} />
+        <span>50% Passive Linear-Optical BSM Post-Selection</span>
+      </label>`;
+    } else if (c === "D2") {
+      ctrl += sliderHtml("d2Dim", "Qudit Dimension d", 2, 8, 1, ws.d2Dim, "");
+      ctrl += sliderHtml("d2Tilt", "Alice Payload Mode Slope", 0.00, 1.10, 0.05, ws.d2Tilt.toFixed(2), "");
+      ctrl += sliderHtml("d2Depol", "Isotropic Channel Noise p", 0.00, 0.85, 0.02, ws.d2Depol.toFixed(2), "");
+    } else if (c === "A5") {
+      ctrl += sliderHtml("a5Depth", "Chained Teleported T-Gates N", 1, 16, 1, ws.a5Depth, "");
+      ctrl += sliderHtml("a5RawP", "Raw |T⟩ Ancilla Infidelity p_raw", 0.005, 0.140, 0.005, ws.a5RawP.toFixed(3), "");
+      ctrl += `<label style="display:flex;align-items:center;gap:7px;cursor:pointer;margin-top:4px;">
+        <input type="checkbox" data-toggle="a5Distilled" ${ws.a5Distilled ? "checked" : ""} />
+        <span>Use A4 15-to-1 Distilled |T⟩ Ancillas (35·p³)</span>
+      </label>`;
+    }
+
+    dock.innerHTML = `
+      <div>
+        <div style="font-weight:700;font-size:14.5px;color:var(--cyan);">[${mod.code}] ${escHtml(mod.title)}</div>
+        <div style="color:var(--text-muted);font-size:12.5px;margin-top:4px;">${escHtml(mod.summary)}</div>
+        <div style="margin-top:5px;font-size:12px;">
+          <a href="${mod.refUrl}" target="_blank" rel="noopener noreferrer">↗ ${escHtml(mod.refLabel)}</a>
+        </div>
+      </div>
+      <div class="card-box ctrl-group">
+        <strong style="color:var(--emerald);font-size:12.5px;">Live Stochastic Stream Parameters</strong>
+        ${ctrl}
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button type="button" class="btn" style="flex:1;" data-action="reseed">↻ New Seed &amp; Clear</button>
+        <button type="button" class="btn" data-action="quick-save">Save (F5)</button>
+      </div>`;
+
+    // Build persistent canvas layout in center-stage (updated at 60 FPS without DOM rebuilds!)
+    stage.innerHTML = `
+      <div class="eq-banner">${escHtml(mod.equation)}</div>
+      <div class="kpi-strip">
+        <div class="kpi-tile"><div class="kpi-name" id="kn-0">Metric 1</div><div class="kpi-num" id="kv-0">-</div></div>
+        <div class="kpi-tile"><div class="kpi-name" id="kn-1">Metric 2</div><div class="kpi-num" id="kv-1">-</div></div>
+        <div class="kpi-tile"><div class="kpi-name" id="kn-2">Metric 3</div><div class="kpi-num" id="kv-2">-</div></div>
+        <div class="kpi-tile"><div class="kpi-name" id="kn-3">Metric 4</div><div class="kpi-num" id="kv-3">-</div></div>
+      </div>
+      <div id="tape-row" class="card-box hidden"><div style="font-size:11.5px;color:var(--text-muted);margin-bottom:4px;" id="tape-title">Live Stream</div><div class="bit-tape" id="bit-tape"></div></div>
+      <div id="layout-split" class="${["Q1","Q3","Q4","C2","A1","A2","A3","A5"].includes(c) ? "viz-grid-2" : ""}" style="${["Q1","Q3","Q4","C2","A1","A2","A3","A5"].includes(c) ? "" : "display:flex;flex-direction:column;gap:11px;"}">
+        <div class="canvas-frame">
+          <div class="canvas-title"><span id="ct-top">Primary Stochastic Arena</span><span class="canvas-sub" id="cs-top"></span></div>
+          <canvas id="cv-top" class="viz-canvas"></canvas>
+        </div>
+        <div class="canvas-frame">
+          <div class="canvas-title"><span id="ct-bot">Running Ensemble Convergence</span><span class="canvas-sub" id="cs-bot"></span></div>
+          <canvas id="cv-bot" class="viz-canvas"></canvas>
+        </div>
+      </div>`;
+
+    const cvTop = document.getElementById("cv-top");
+    if (["Q1", "Q3", "Q4", "A5"].includes(c) && cvTop) {
+      let dragging = false, lx = 0, ly = 0;
+      cvTop.addEventListener("pointerdown", (ev) => { dragging = true; lx = ev.clientX; ly = ev.clientY; cvTop.setPointerCapture(ev.pointerId); });
+      cvTop.addEventListener("pointermove", (ev) => {
+        if (!dragging) return;
+        blochYaw += (ev.clientX - lx) * 0.012;
+        blochPitch = Math.max(-1.35, Math.min(1.35, blochPitch + (ev.clientY - ly) * 0.012));
+        lx = ev.clientX; ly = ev.clientY;
+      });
+      cvTop.addEventListener("pointerup", () => { dragging = false; });
+    }
+  }
+
+  // =========================================================================
+  // 7. 60 FPS Frame Painter (Zero DOM Thrashing)
+  // =========================================================================
+  function setKpi(idx, name, val, color) {
+    const nEl = document.getElementById("kn-" + idx);
+    const vEl = document.getElementById("kv-" + idx);
+    if (nEl) nEl.textContent = name;
+    if (vEl) { vEl.textContent = val; vEl.style.color = color || "var(--text-main)"; }
+  }
+
+  function drawLiveFrame() {
+    document.getElementById("live-telemetry-pill").textContent =
+      `t = ${arena.simTime.toFixed(1)}s | ${arena.events} events`;
+    if (viewMode !== "workspace") return;
+
+    const c = ws.activeModule;
+    const cvTop = document.getElementById("cv-top");
+    const cvBot = document.getElementById("cv-bot");
+    const ctTop = document.getElementById("ct-top");
+    const ctBot = document.getElementById("ct-bot");
+    if (!cvTop || !cvBot) return;
+
+    if (c === "Q5") {
+      document.getElementById("tape-row").classList.add("hidden");
+      const hops = ws.q5Hops;
+      const rate = arena.q5Trials > 0 ? (arena.q5Heralded / arena.q5Trials) * 100 : 0;
+      const empF = arena.q5Heralded > 0 ? arena.q5Matches / arena.q5Heralded : 1.0;
+      setKpi(0, "Repeater BSM Hops", `${hops} BSM${hops>1?"s":""} (${hops+1} SPDC links)`, "var(--cyan)");
+      setKpi(1, "Heralded End-to-End", `${arena.q5Heralded} (${rate.toFixed(1)}% yield)`, "var(--emerald)");
+      setKpi(2, "Swapped Bell Fidelity", empF.toFixed(3), empF > 0.50 ? "var(--emerald)" : "var(--rose)");
+      setKpi(3, "Analyzer Regime", ws.q5LinearOptics ? "50% Linear-Optics" : "100% Deterministic", "var(--amber)");
+      ctTop.textContent = "Multi-Hop SPDC Entanglement Swapping & Midpoint Bell-State Analyzers";
+      ctBot.textContent = "End-to-End Heralded Bell Fidelity F(t) vs. CHSH & Separability Bounds";
+
+      const { ctx, w, h } = prepCanvas(cvTop, 175);
+      const nSeg = hops + 1;
+      const xL = 56, xR = w - 56, cy = h * 0.62;
+      const segW = (xR - xL) / nSeg;
+      ctx.strokeStyle = "#334766"; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(xL, cy); ctx.lineTo(xR, cy); ctx.stroke();
+
+      if (arena.q5AllOk) {
+        ctx.strokeStyle = "#34d399"; ctx.lineWidth = 2.4;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(xL, cy - 8);
+        ctx.quadraticCurveTo((xL + xR) * 0.5, 12, xR, cy - 8);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#34d399"; ctx.font = "11px JetBrains Mono, monospace";
+        ctx.fillText("Heralded Non-Local Entanglement (Alice <-> Bob)", (xL + xR) * 0.5 - 148, 22);
+      }
+
+      ctx.fillStyle = "#38bdf8";
+      ctx.beginPath(); ctx.arc(xL, cy, 8, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(xR, cy, 8, 0, Math.PI * 2); ctx.fill();
+      ctx.font = "11px JetBrains Mono, monospace";
+      ctx.fillText("Alice", xL - 16, cy + 24);
+      ctx.fillText("Bob", xR - 12, cy + 24);
+
+      for (let sIdx = 0; sIdx < nSeg; sIdx++) {
+        const sx = xL + (sIdx + 0.5) * segW;
+        const lx = xL + sIdx * segW, rx = xL + (sIdx + 1) * segW;
+        const p1 = sx - arena.q5Phase * (sx - lx - 16);
+        const p2 = sx + arena.q5Phase * (rx - sx - 16);
+        ctx.fillStyle = "#a78bfa";
+        ctx.beginPath();
+        ctx.moveTo(sx, cy - 7); ctx.lineTo(sx + 7, cy); ctx.lineTo(sx, cy + 7); ctx.lineTo(sx - 7, cy);
+        ctx.closePath(); ctx.fill();
+        ctx.fillText(`S${sIdx+1}`, sx - 7, cy - 12);
+        ctx.fillStyle = "#fbbf24";
+        ctx.beginPath(); ctx.arc(p1, cy, 3.8, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(p2, cy, 3.8, 0, Math.PI * 2); ctx.fill();
+      }
+
+      for (let hIdx = 0; hIdx < hops; hIdx++) {
+        const bx = xL + (hIdx + 1) * segW;
+        const ok = arena.q5SwapFlags[hIdx];
+        ctx.fillStyle = "#111b2b";
+        ctx.fillRect(bx - 20, cy - 12, 40, 24);
+        ctx.strokeStyle = ok ? "#34d399" : "#fb7185";
+        ctx.lineWidth = 1.8;
+        ctx.strokeRect(bx - 20, cy - 12, 40, 24);
+        ctx.fillStyle = ok ? "#34d399" : "#fb7185";
+        ctx.fillText(`BSM${hIdx+1}`, bx - 15, cy + 4);
+      }
+
+      const t0 = arena.q5TraceF.length ? arena.q5TraceF[0][0] : 0;
+      const t1 = Math.max(t0 + 2, arena.simTime);
+      drawLinePlot(cvBot, [t0, t1], [0.20, 1.05], [
+        { label: "Swapped Bell Fidelity", pts: arena.q5TraceF, color: "#34d399" }
+      ], [
+        { y: 0.7803, label: "CHSH Violation 0.780", color: "#fbbf24" },
+        { y: 0.50, label: "Separability Bound 0.50", color: "#fb7185" }
+      ]);
+      return;
+    }
+    if (c === "D2") {
+      document.getElementById("tape-row").classList.add("hidden");
+      const d = ws.d2Dim;
+      const clsLim = 2 / (d + 1);
+      const subLim = (d - 1) / d;
+      const empF = arena.d2Shots > 0 ? arena.d2FidSum / arena.d2Shots : 1.0;
+      setKpi(0, "Hilbert Dimension", `d = ${d} (${d*d} Bell states)`, "var(--cyan)");
+      setKpi(1, "Classical Cdit Relay", `(m=${arena.d2LastM}, n=${arena.d2LastN}) · ${(2*Math.log2(d)).toFixed(2)}b`, "var(--amber)");
+      setKpi(2, "Avg Fidelity F_avg", empF.toFixed(3), empF > subLim ? "var(--emerald)" : "var(--amber)");
+      setKpi(3, "Dimensional Witness", empF > subLim ? `Genuine ${d}D (> ${subLim.toFixed(2)})` : empF > clsLim ? "Subspace Quantum" : "Classical Limit", empF > subLim ? "var(--emerald)" : "var(--rose)");
+      ctTop.textContent = `d = ${d} Multiport Generalized Bell Analyzer & Weyl Z_d^m X_d^n Feed-Forward`;
+      ctBot.textContent = "Bob Reconstructed d-Mode Distribution (Bars) vs. Alice Payload Profile (Markers)";
+
+      const { ctx, w, h } = prepCanvas(cvTop, 165);
+      const xA = 70, xBsm = w * 0.44, xBob = w - 95;
+      ctx.font = "11px JetBrains Mono, monospace";
+      ctx.strokeStyle = "#fbbf24"; ctx.lineWidth = 1.4; ctx.setLineDash([5, 4]);
+      ctx.beginPath(); ctx.moveTo(xBsm + 28, 26); ctx.lineTo(xBob, 26); ctx.stroke();
+      ctx.setLineDash([]);
+      const pktX = xBsm + 32 + arena.d2PacketX * (xBob - xBsm - 40);
+      ctx.fillStyle = "#fbbf24";
+      ctx.fillRect(pktX - 16, 17, 32, 16);
+      ctx.fillStyle = "#0b111c";
+      ctx.fillText(`${arena.d2LastM},${arena.d2LastN}`, pktX - 10, 29);
+      ctx.fillStyle = "#fbbf24";
+      ctx.fillText("Classical 2-cdit (m, n)", (xBsm + xBob) * 0.5 - 56, 13);
+
+      for (let r = 0; r < d; r++) {
+        const ry = 46 + (r / Math.max(1, d - 1)) * (h - 64);
+        ctx.strokeStyle = "#2b3e5e"; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(xA, ry); ctx.lineTo(xBsm - 28, ry); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(xBsm + 28, ry); ctx.lineTo(xBob, ry); ctx.stroke();
+        const dotX = xA + ((arena.d2PacketX + r * 0.13) % 1.0) * (xBsm - 28 - xA);
+        ctx.fillStyle = "#38bdf8";
+        ctx.beginPath(); ctx.arc(dotX, ry, 3.0, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = "#172236"; ctx.strokeStyle = "#a78bfa"; ctx.lineWidth = 1.8;
+      ctx.fillRect(xBsm - 28, 36, 56, h - 48); ctx.strokeRect(xBsm - 28, 36, 56, h - 48);
+      ctx.fillStyle = "#a78bfa"; ctx.fillText(`Bell_${d}`, xBsm - 20, h * 0.5 + 8);
+
+      ctx.fillStyle = "#13292a"; ctx.strokeStyle = "#34d399";
+      ctx.fillRect(xBob, 36, 68, h - 48); ctx.strokeRect(xBob, 36, 68, h - 48);
+      ctx.fillStyle = "#34d399"; ctx.fillText("Z^m X^n", xBob + 8, h * 0.5 + 8);
+
+      const tot = Math.max(1, arena.d2Counts.reduce((a, b) => a + b, 0));
+      const probs = Array.from(arena.d2Counts, v => v / tot);
+      const lbls = probs.map((_, k) => `|${k}⟩`);
+      drawBars(cvBot, lbls, probs, arena.d2Ideal, "#38bdf8");
+      return;
+    }
+    if (c === "A5") {
+      document.getElementById("tape-row").classList.add("hidden");
+      const depth = ws.a5Depth;
+      const targetPhi = depth * (Math.PI * 0.25);
+      const targetVec = [Math.cos(targetPhi), Math.sin(targetPhi), 0];
+      let mx = 0, my = 0, mz = 0;
+      if (arena.a5Cloud.length) {
+        arena.a5Cloud.forEach(b => { mx += b[0]; my += b[1]; mz += b[2]; });
+        mx /= arena.a5Cloud.length; my /= arena.a5Cloud.length; mz /= arena.a5Cloud.length;
+      } else { [mx, my, mz] = targetVec; }
+      const fixPct = arena.a5Gadgets > 0 ? (arena.a5Fixups / arena.a5Gadgets) * 100 : 50;
+      const empF = arena.a5Shots > 0 ? arena.a5FidSum / arena.a5Shots : 1.0;
+      const rawBase = 0.5 * (1 + Math.pow(1 - 2 * ws.a5RawP, depth));
+
+      setKpi(0, "Teleported Chain", `T^${depth} (${(depth * 45) % 360}° Z-rot)`, "var(--cyan)");
+      setKpi(1, "Clifford S^1 Fixups", `${fixPct.toFixed(1)}% (m=${arena.a5LastM})`, "var(--amber)");
+      setKpi(2, "Sequence Fidelity F", empF.toFixed(4), "var(--emerald)");
+      setKpi(3, "Magic-State Source", ws.a5Distilled ? "A4 Distilled |T⟩" : "Unpurified Raw |T⟩", ws.a5Distilled ? "var(--emerald)" : "var(--rose)");
+      ctTop.textContent = "Teleported T^N Bloch Equator Cloud vs. Ideal Octant Target (Amber)";
+      ctBot.textContent = "Chained Gate-Teleportation Sequence Fidelity vs. Raw |T⟩ Baseline";
+
+      drawBlochCloud(cvTop, [mx, my, mz], arena.a5Cloud, targetVec);
+      const t0 = arena.a5TraceF.length ? arena.a5TraceF[0][0] : 0;
+      const t1 = Math.max(t0 + 2, arena.simTime);
+      drawLinePlot(cvBot, [t0, t1], [0.35, 1.04], [
+        { label: "Teleported T^N Fidelity", pts: arena.a5TraceF, color: "#34d399" }
+      ], [
+        { y: rawBase, label: `Raw Unpurified Baseline ${rawBase.toFixed(3)}`, color: "#fb7185" }
+      ]);
+      return;
+    }
+    if (c === "I1") {
+      document.getElementById("tape-row").classList.add("hidden");
+      const vis = Math.max(0, 1 - ws.i1Path);
+      setKpi(0, "Detected Quanta", String(arena.events), "var(--cyan)");
+      setKpi(1, "Fringe Visibility V", (vis * 100).toFixed(0) + "%", vis > 0.5 ? "var(--emerald)" : "var(--amber)");
+      setKpi(2, "Which-Path Coupling", (ws.i1Path * 100).toFixed(0) + "%");
+      setKpi(3, "Regime", vis > 0.7 ? "Wave Interference" : vis < 0.2 ? "Particle Ballistic" : "Partial Coherence");
+      ctTop.textContent = "2D Single-Quantum Phosphor Detector Screen (Dot-by-Dot Arrival)";
+      ctBot.textContent = "Accumulating Screen Intensity Profile I(x) (64 Spatial Bins)";
+      const { ctx, w, h } = prepCanvas(cvTop, 175);
+      ctx.fillStyle = "#070b12"; ctx.fillRect(0, 0, w, h);
+      for (const hit of arena.i1Hits) {
+        const px = 18 + hit.x * (w - 36), py = 12 + hit.y * (h - 24);
+        ctx.fillStyle = hit.flash > 0.2 ? "#fbbf24" : "rgba(56, 189, 248, 0.78)";
+        ctx.beginPath(); ctx.arc(px, py, hit.flash > 0.2 ? 3.5 : 2.1, 0, Math.PI * 2); ctx.fill();
+      }
+      const tot = Math.max(1, arena.i1Bins.reduce((a, b) => a + b, 0));
+      const probs = Array.from(arena.i1Bins, v => v / tot);
+      const lbls = probs.map((_, i) => String(i - 32));
+      drawBars(cvBot, lbls, probs, null, "#38bdf8");
+      return;
+    }
+    if (c === "I2") {
+      document.getElementById("tape-row").classList.add("hidden");
+      const tot = Math.max(1, arena.i2Counts[0] + arena.i2Counts[1] + arena.i2Counts[2]);
+      setKpi(0, "Port D1 (Bright)", `${arena.i2Counts[0]} (${((arena.i2Counts[0]/tot)*100).toFixed(1)}%)`, "var(--cyan)");
+      setKpi(1, "Port D2 (Dark / IFM)", `${arena.i2Counts[1]} (${((arena.i2Counts[1]/tot)*100).toFixed(1)}%)`, "var(--amber)");
+      setKpi(2, "Blocked / Absorbed", `${arena.i2Counts[2]} (${((arena.i2Counts[2]/tot)*100).toFixed(1)}%)`, "var(--rose)");
+      setKpi(3, "Interferometer Mode", ws.i2Block ? "Elitzur-Vaidman IFM" : "Coherent Dual-Arm", "var(--emerald)");
+      ctTop.textContent = "Mach-Zehnder Single-Photon Interferometer (BS1 → Upper/Lower Arms → BS2)";
+      ctBot.textContent = "Empirical Detector Port Distribution";
+      const { ctx, w, h } = prepCanvas(cvTop, 170);
+      const x1 = 90, x2 = w - 130, yTop = 34, yBot = h - 34;
+      ctx.strokeStyle = "#354b6e"; ctx.lineWidth = 1.6;
+      ctx.strokeRect(x1, yTop, x2 - x1, yBot - yTop);
+      ctx.fillStyle = "#38bdf8"; ctx.fillRect(x1 - 5, (yTop+yBot)/2 - 12, 10, 24);
+      ctx.fillRect(x2 - 5, (yTop+yBot)/2 - 12, 10, 24);
+      ctx.font = "11px JetBrains Mono, monospace"; ctx.fillStyle = "#e6eef8";
+      ctx.fillText("BS1", x1 - 12, yTop - 8); ctx.fillText("BS2", x2 - 12, yTop - 8);
+      ctx.fillText(`Phase φ=${ws.i2Phase.toFixed(2)}`, (x1+x2)*0.5 - 40, yTop - 8);
+      ctx.fillStyle = "#38bdf8"; ctx.fillText("D1 Bright", x2 + 16, yTop + 14);
+      ctx.fillStyle = "#fbbf24"; ctx.fillText("D2 Dark/IFM", x2 + 16, yBot - 6);
+      if (ws.i2Block) {
+        ctx.fillStyle = "#fb7185";
+        ctx.fillRect((x1+x2)*0.5 - 8, yBot - 10, 16, 20);
+        ctx.fillText("Blocker", (x1+x2)*0.5 - 24, yBot + 22);
+      }
+      for (const p of arena.i2Photons) {
+        let px = x1 + p.t * (x2 - x1), py = p.arm === 0 ? yTop : yBot;
+        if (ws.i2Block && p.arm === 1 && p.t > 0.5) continue;
+        if (p.t > 0.88) { px = x2 + (p.t - 0.88) * 180; py = p.out === 0 ? yTop + 10 : yBot - 10; }
+        ctx.fillStyle = p.out === 1 ? "#fbbf24" : "#38bdf8";
+        ctx.beginPath(); ctx.arc(px, py, 4.4, 0, Math.PI * 2); ctx.fill();
+      }
+      drawBars(cvBot, ["D1 Bright", "D2 Dark/IFM", "Absorbed"], arena.i2Counts.map(v => v / tot), null, "#38bdf8");
+      return;
+    }
+    if (c === "I3") {
+      document.getElementById("tape-row").classList.add("hidden");
+      const outTot = Math.max(1, arena.i3Counts[0] + arena.i3Counts[1]);
+      const revPct = (arena.i3Counts[1] / outTot) * 100;
+      setKpi(0, "SG3 |+Z⟩ Output", String(arena.i3Counts[0]), "var(--cyan)");
+      setKpi(1, "SG3 |-Z⟩ Revived!", `${arena.i3Counts[1]} (${revPct.toFixed(1)}%)`, "var(--amber)");
+      setKpi(2, "Blocked at SG1/SG2", String(arena.i3Counts[2]), "var(--text-muted)");
+      setKpi(3, "SG2 Filter", ws.i3Filter ? `Active (θ=${ws.i3Angle}°)` : "Bypassed", "var(--emerald)");
+      ctTop.textContent = "Sequential Stern-Gerlach Spin-1/2 Silver Atom Beam (SG1:Z → SG2:θ → SG3:Z)";
+      ctBot.textContent = "SG3 Analyzer Output Spin Fractions (|+Z⟩ vs. Revived |-Z⟩)";
+      const { ctx, w, h } = prepCanvas(cvTop, 165);
+      const stages = [[w*0.26, "SG1 (Z)", "#38bdf8"], [w*0.54, ws.i3Filter ? `SG2 (${ws.i3Angle}°)` : "SG2 (Out)", ws.i3Filter ? "#a78bfa" : "#334155"], [w*0.80, "SG3 (Z)", "#34d399"]];
+      ctx.font = "11px JetBrains Mono, monospace";
+      for (const [sx, lbl, col] of stages) {
+        ctx.strokeStyle = col; ctx.lineWidth = 2;
+        ctx.strokeRect(sx - 26, 30, 52, h - 56);
+        ctx.fillStyle = col; ctx.fillText(lbl, sx - 28, 22);
+      }
+      for (const a of arena.i3Atoms) {
+        if (a.x > a.stop) continue;
+        const px = 28 + a.x * (w - 56);
+        const py = a.x < 0.80 ? h * 0.5 : (a.up ? h * 0.34 : h * 0.68);
+        ctx.fillStyle = (!a.up && a.x >= 0.80) ? "#fbbf24" : "#38bdf8";
+        ctx.beginPath(); ctx.arc(px, py, 4.2, 0, Math.PI * 2); ctx.fill();
+      }
+      drawBars(cvBot, ["|+Z⟩ Output", "|-Z⟩ Revived"], [arena.i3Counts[0]/outTot, arena.i3Counts[1]/outTot], null, "#38bdf8");
+      return;
+    }
+    if (c === "I4") {
+      document.getElementById("tape-row").classList.add("hidden");
+      const n = ws.i4Stages;
+      const thSurv = Math.pow(Math.cos(Math.PI / (2 * n)), 2 * n) * 100;
+      const tot = Math.max(1, arena.i4Trans + arena.i4Abs);
+      const empSurv = (arena.i4Trans / tot) * 100;
+      setKpi(0, "Polarizer Stages N", String(n), "var(--cyan)");
+      setKpi(1, "Empirical 90° Survival", empSurv.toFixed(1) + "%", "var(--emerald)");
+      setKpi(2, "Zeno Theory cos^(2N)", thSurv.toFixed(1) + "%", "var(--amber)");
+      setKpi(3, "Absorbed Photons", String(arena.i4Abs), "var(--rose)");
+      ctTop.textContent = `Quantum Zeno Stack: ${n} Projective Polarizer Plates Rotating 0° → 90°`;
+      ctBot.textContent = "Running Photon Survival (%) Convergence vs. Zeno Analytical Limit";
+      const { ctx, w, h } = prepCanvas(cvTop, 145);
+      const padL = 56, padR = 56;
+      for (let k = 1; k <= n; k++) {
+        const x = padL + (k / (n + 1)) * (w - padL - padR);
+        ctx.strokeStyle = "#4b638a"; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(x, 24); ctx.lineTo(x, h - 24); ctx.stroke();
+      }
+      for (const p of arena.i4Photons) {
+        const px = padL + p.x * (w - padL - padR);
+        ctx.fillStyle = p.ok ? "#34d399" : "#fb7185";
+        ctx.beginPath(); ctx.arc(px, h * 0.5, 4.4, 0, Math.PI * 2); ctx.fill();
+      }
+      const t0 = arena.i4Trace.length ? arena.i4Trace[0][0] : 0;
+      const t1 = Math.max(t0 + 2, arena.simTime);
+      drawLinePlot(cvBot, [t0, t1], [0, 104], [
+        { label: "Empirical Survival (%)", pts: arena.i4Trace, color: "#38bdf8" }
+      ], [{ y: thSurv, label: `Zeno Theory ${thSurv.toFixed(1)}%`, color: "#34d399" }]);
+      return;
+    }
+    if (c === "A1") {
+      document.getElementById("tape-row").classList.add("hidden");
+      const d = ws.a1Dist;
+      const below = ws.a1PhysP < 0.010;
+      setKpi(0, "Rotated Code [[n,k,d]]", `[[${d*d}, 1, ${d}]]`, "var(--cyan)");
+      setKpi(1, "Physical Error p", (ws.a1PhysP * 100).toFixed(2) + "%", below ? "var(--emerald)" : "var(--rose)");
+      setKpi(2, "d=7 Logical Survival", (arena.a1Surv7 * 100).toFixed(1) + "%", "var(--emerald)");
+      setKpi(3, "Regime vs. p_th (1.0%)", below ? "BELOW THRESHOLD" : "ABOVE THRESHOLD", below ? "var(--emerald)" : "var(--rose)");
+      ctTop.textContent = `d = ${d} Surface-Code Lattice (Emerald/Violet = Triggered Stabilizer Plaquettes)`;
+      ctBot.textContent = "Logical Survival Scaling Across Distances d = 3, 5, 7";
+      const { ctx, w, h } = prepCanvas(cvTop, 235);
+      const sz = Math.min(w - 30, h - 24);
+      const ox = (w - sz) * 0.5, oy = 12, step = sz / d;
+      for (let r = 0; r < d - 1; r++) for (let cl = 0; cl < d - 1; cl++) {
+        const isX = (r + cl) % 2 === 0;
+        const corners = [arena.a1Grid[r*d+cl], arena.a1Grid[r*d+cl+1], arena.a1Grid[(r+1)*d+cl], arena.a1Grid[(r+1)*d+cl+1]];
+        const trig = (corners.filter(e => isX ? e === 2 : e === 1).length % 2) === 1;
+        ctx.fillStyle = trig ? (isX ? "rgba(52,211,153,0.55)" : "rgba(167,139,250,0.55)") : (isX ? "#142233" : "#1a182e");
+        ctx.fillRect(ox + (cl + 0.5)*step + 1, oy + (r + 0.5)*step + 1, step - 2, step - 2);
+      }
+      for (let r = 0; r < d; r++) for (let cl = 0; cl < d; cl++) {
+        const e = arena.a1Grid[r*d+cl];
+        ctx.fillStyle = e === 1 ? "#fb7185" : e === 2 ? "#fbbf24" : "#38bdf8";
+        ctx.beginPath(); ctx.arc(ox + (cl + 0.5)*step, oy + (r + 0.5)*step, e > 0 ? 5.8 : 4.0, 0, Math.PI * 2); ctx.fill();
+      }
+      const t0 = arena.a1Trace3.length ? arena.a1Trace3[0][0] : 0;
+      const t1 = Math.max(t0 + 2, arena.simTime);
+      drawLinePlot(cvBot, [t0, t1], [0, 1.05], [
+        { label: "d = 3", pts: arena.a1Trace3, color: "#fbbf24" },
+        { label: "d = 5", pts: arena.a1Trace5, color: "#38bdf8" },
+        { label: "d = 7", pts: arena.a1Trace7, color: "#34d399" }
+      ], []);
+      return;
+    }
+    if (c === "A2") {
+      document.getElementById("tape-row").classList.add("hidden");
+      const [fci, eCur] = h2MorseAndVar(ws.a2BondR, arena.a2Theta);
+      const errMha = (eCur - fci) * 1000;
+      setKpi(0, "Bond Length R", ws.a2BondR.toFixed(2) + " Å", "var(--cyan)");
+      setKpi(1, "VQE Energy E(θ)", eCur.toFixed(4) + " Ha");
+      setKpi(2, "STO-3G FCI Exact", fci.toFixed(4) + " Ha", "var(--emerald)");
+      setKpi(3, "Error vs. Chem Acc", errMha.toFixed(2) + " mHa", errMha <= 1.6 ? "var(--emerald)" : "var(--amber)");
+      ctTop.textContent = "Molecular H2 Dissociation Curve E_FCI(R) & Live VQE State";
+      ctBot.textContent = "Live Shot-Noise SPSA Variational Descent E(t) (Ha)";
+      const pes = [];
+      for (let i = 0; i <= 42; i++) {
+        const rx = 0.35 + i * 0.05;
+        pes.push([rx, h2MorseAndVar(rx, 0)[0]]);
+      }
+      drawLinePlot(cvTop, [0.35, 2.45], [-1.20, -0.40], [
+        { label: "FCI Ground Curve", pts: pes, color: "#34d399" },
+        { label: "Current R", pts: [[ws.a2BondR, eCur], [ws.a2BondR + 0.01, eCur]], color: "#fbbf24" }
+      ], []);
+      const t0 = arena.a2TraceE.length ? arena.a2TraceE[0][0] : 0;
+      const t1 = Math.max(t0 + 2, arena.simTime);
+      drawLinePlot(cvBot, [t0, t1], [-1.20, -0.30], [
+        { label: "VQE Ansatz E(t)", pts: arena.a2TraceE, color: "#38bdf8" }
+      ], [{ y: fci, label: `Exact FCI ${fci.toFixed(4)} Ha`, color: "#34d399" }]);
+      return;
+    }
+    if (c === "A3") {
+      document.getElementById("tape-row").classList.add("hidden");
+      const rNow = arena.a3TraceR.length ? arena.a3TraceR[arena.a3TraceR.length - 1][1] : 0;
+      setKpi(0, "QAOA Depth p", `p = ${ws.a3DepthP} layers`, "var(--cyan)");
+      setKpi(1, "Sampled Graph Shots", String(arena.events));
+      setKpi(2, "Mean Ratio ⟨C⟩/C_max", (rNow * 100).toFixed(1) + "%", "var(--emerald)");
+      setKpi(3, "Optimal Max-Cut", "10 / 12 edges", "var(--amber)");
+      ctTop.textContent = "8-Atom Rydberg Graph Partition (Emerald Edges = Satisfied Cut)";
+      ctBot.textContent = "Accumulating Sampled Cut-Size Histogram P(C)";
+      const { ctx, w, h } = prepCanvas(cvTop, 215);
+      const cx = w * 0.5, cy = h * 0.52, rad = Math.min(w, h) * 0.36;
+      const npos = (i) => {
+        const a = (i * Math.PI * 2) / 8 - Math.PI / 2;
+        return [cx + rad * Math.cos(a), cy + rad * Math.sin(a)];
+      };
+      const edges = [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,0],[0,4],[1,5],[2,6],[3,7]];
+      for (const [u, v] of edges) {
+        const cut = ((arena.a3Mask >> u) & 1) !== ((arena.a3Mask >> v) & 1);
+        const [x0, y0] = npos(u), [x1, y1] = npos(v);
+        ctx.strokeStyle = cut ? "#34d399" : "#273650";
+        ctx.lineWidth = cut ? 2.2 : 1.1;
+        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+      }
+      for (let i = 0; i < 8; i++) {
+        const [nx, ny] = npos(i);
+        ctx.fillStyle = ((arena.a3Mask >> i) & 1) ? "#fbbf24" : "#38bdf8";
+        ctx.beginPath(); ctx.arc(nx, ny, 8.5, 0, Math.PI * 2); ctx.fill();
+      }
+      const tot = Math.max(1, arena.a3CutBins.reduce((a, b) => a + b, 0));
+      const probs = Array.from(arena.a3CutBins, v => v / tot);
+      const lbls = probs.map((_, i) => "C=" + i);
+      drawBars(cvBot, lbls, probs, null, "#34d399");
+      return;
+    }
+    if (c === "A4") {
+      document.getElementById("tape-row").classList.add("hidden");
+      const pin = ws.a4RawP;
+      const thOut = 35 * Math.pow(pin, 3) * 100;
+      const yld = arena.a4Batches > 0 ? ((arena.a4Ok + arena.a4Err) / arena.a4Batches) * 100 : 0;
+      setKpi(0, "15-Qubit Batches", String(arena.a4Batches), "var(--cyan)");
+      setKpi(1, "Purified |T⟩ Emitted", `${arena.a4Ok} (${yld.toFixed(1)}% yield)`, "var(--emerald)");
+      setKpi(2, "Syndrome Aborts", String(arena.a4Abort), "var(--amber)");
+      setKpi(3, "Cubic 35*p_in^3", thOut.toFixed(4) + "%", "var(--emerald)");
+      ctTop.textContent = "15-to-1 Reed-Muller T-Factory Stream (Emerald = Purified |T⟩, Rose = Syndrome Abort)";
+      ctBot.textContent = "Distilled |T⟩ Output Infidelity (%) vs. Raw Unpurified p_in (%)";
+      const { ctx, w, h } = prepCanvas(cvTop, 145);
+      const fx = w * 0.5;
+      ctx.strokeStyle = "#3c5278"; ctx.lineWidth = 2;
+      ctx.strokeRect(fx - 46, 28, 92, h - 56);
+      ctx.fillStyle = "#e6eef8"; ctx.font = "11px JetBrains Mono, monospace";
+      ctx.fillText("[[15,1,3]]", fx - 32, h * 0.5 + 4);
+      for (const it of arena.a4Items) {
+        const px = 40 + it.x * (w - 80);
+        const py = it.x < 0.5 ? h * 0.5 : (it.status === 2 ? h * 0.80 : h * 0.35);
+        ctx.fillStyle = it.status === 2 ? "#fb7185" : "#34d399";
+        ctx.beginPath(); ctx.arc(px, py, 4.4, 0, Math.PI * 2); ctx.fill();
+      }
+      const t0 = arena.a4TraceOut.length ? arena.a4TraceOut[0][0] : 0;
+      const t1 = Math.max(t0 + 2, arena.simTime);
+      drawLinePlot(cvBot, [t0, t1], [0, Math.max(1.5, pin * 115)], [
+        { label: "Distilled p_out (%)", pts: arena.a4TraceOut, color: "#34d399" }
+      ], [{ y: pin * 100, label: `Raw Input ${(pin*100).toFixed(1)}%`, color: "#fb7185" }]);
+      return;
+    }
+    if (c === "Q1") {
+      const lx = arena.q1TraceX.length ? arena.q1TraceX[arena.q1TraceX.length - 1][1] : 0;
+      const ly = arena.q1TraceY.length ? arena.q1TraceY[arena.q1TraceY.length - 1][1] : 0;
+      const lz = arena.q1TraceZ.length ? arena.q1TraceZ[arena.q1TraceZ.length - 1][1] : 1;
+      const purityNorm = Math.hypot(lx, ly, lz);
+      setKpi(0, "Ensemble ⟨X⟩, ⟨Y⟩, ⟨Z⟩", `(${lx.toFixed(2)}, ${ly.toFixed(2)}, ${lz.toFixed(2)})`, "var(--cyan)");
+      setKpi(1, "Coherence ||⟨r⟩||", purityNorm.toFixed(3), "var(--emerald)");
+      setKpi(2, "Quantum Jumps to |0⟩", String(arena.q1Jumps), "var(--amber)");
+      setKpi(3, "Active Trajectories", "64 walkers");
+      ctTop.textContent = "3D Bloch Cloud (64 Stochastic Quantum-Jump Walkers — drag to orbit)";
+      ctBot.textContent = "Scrolling Ensemble Expectation (⟨X(t)⟩, ⟨Y(t)⟩, ⟨Z(t)⟩)";
+      drawBlochCloud(cvTop, [lx, ly, lz], arena.q1Walkers, null);
+      const t0 = arena.q1TraceX.length ? arena.q1TraceX[0][0] : 0;
+      const t1 = Math.max(t0 + 2, arena.simTime);
+      drawLinePlot(cvBot, [t0, t1], [-1.05, 1.05], [
+        { label: "⟨X⟩", pts: arena.q1TraceX, color: "#38bdf8" },
+        { label: "⟨Y⟩", pts: arena.q1TraceY, color: "#34d399" },
+        { label: "⟨Z⟩", pts: arena.q1TraceZ, color: "#fbbf24" }
+      ], []);
+    }
+    else if (c === "Q2") {
+      const nQ = ws.q2Preset === "bell" ? 2 : ws.q2Preset === "ghz" ? 4 : 3;
+      const tot = Math.max(1, arena.q2Counts.reduce((a, b) => a + b, 0));
+      const emp = Array.from(arena.q2Counts, v => v / tot);
+      let tvd = 0;
+      for (let i = 0; i < emp.length; i++) tvd += 0.5 * Math.abs(emp[i] - arena.q2Ideal[i]);
+      setKpi(0, "Accumulated Shots", String(arena.events), "var(--cyan)");
+      setKpi(1, "Empirical Fidelity (1 - TVD)", ((1 - tvd) * 100).toFixed(1) + "%", "var(--emerald)");
+      setKpi(2, "Gate Fault Rate", (ws.q2GateFault * 100).toFixed(0) + "%", "var(--rose)");
+      setKpi(3, "Topology", ws.q2Preset.toUpperCase());
+
+      ctTop.textContent = "Live Multi-Qubit Wavepacket Stream & Stochastic Pauli Gate Sparks";
+      ctBot.textContent = "Empirical Born Histogram (Cyan) vs. Ideal Target (Amber Outline)";
+      const { ctx, w, h } = prepCanvas(cvTop, 170);
+      const padL = 56, padR = 24;
+      for (let q = 0; q < nQ; q++) {
+        const y = 26 + (q + 0.5) * ((h - 36) / nQ);
+        ctx.fillStyle = "#e6eef8"; ctx.font = "11px JetBrains Mono, monospace";
+        ctx.fillText(`q[${q}] |0⟩`, 8, y + 4);
+        ctx.strokeStyle = "#3c5278"; ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+      }
+      for (let g = 1; g <= nQ + 1; g++) {
+        const gx = padL + (g / (nQ + 2)) * (w - padL - padR);
+        ctx.strokeStyle = "#263753";
+        ctx.beginPath(); ctx.moveTo(gx, 20); ctx.lineTo(gx, h - 14); ctx.stroke();
+      }
+      for (const pk of arena.q2Packets) {
+        const px = padL + pk.x * (w - padL - padR);
+        const py = 26 + (pk.q + 0.5) * ((h - 36) / nQ);
+        ctx.fillStyle = "#38bdf8";
+        ctx.beginPath(); ctx.arc(px, py, 4.2, 0, Math.PI * 2); ctx.fill();
+      }
+      for (const sp of arena.q2Sparks) {
+        const sx = padL + (0.12 + sp.col * 0.78) * (w - padL - padR);
+        const sy = 26 + (sp.q + 0.5) * ((h - 36) / nQ);
+        ctx.strokeStyle = `rgba(251, 113, 133, ${sp.ttl})`; ctx.lineWidth = 2.2;
+        ctx.beginPath(); ctx.arc(sx, sy, 14 * (1.15 - sp.ttl * 0.6), 0, Math.PI * 2); ctx.stroke();
+      }
+      const lbls = Array.from({ length: emp.length }, (_, i) => `|${i.toString(2).padStart(nQ, "0")}⟩`);
+      drawBars(cvBot, lbls, emp, arena.q2Ideal, "#38bdf8");
+    }
+    else if (c === "Q3") {
+      const src = arena.q3CurSrc || [0, 0, 1];
+      let mx = 0, my = 0, mz = 0;
+      const cl = arena.q3Cloud;
+      if (cl.length) {
+        cl.forEach(b => { mx += b[0]; my += b[1]; mz += b[2]; });
+        mx /= cl.length; my /= cl.length; mz /= cl.length;
+      } else { [mx, my, mz] = src; }
+      const avgFid = arena.q3FidCnt > 0 ? arena.q3FidSum / arena.q3FidCnt : 1.0;
+      setKpi(0, "Teleported Pairs", String(arena.events), "var(--cyan)");
+      setKpi(1, "Running Fidelity F", avgFid.toFixed(4), "var(--emerald)");
+      setKpi(2, "Last Bell Bits (m0,m1)", `(${arena.q3Bell[0]}, ${arena.q3Bell[1]})`, "var(--amber)");
+      setKpi(3, "Feed-Forward Gate", `Z^${arena.q3Bell[0]} X^${arena.q3Bell[1]}`);
+
+      ctTop.textContent = "Bob Recovered Cloud (Violet/Cyan) Tracking Alice Source (Amber)";
+      ctBot.textContent = "Live Entangled EPR Source & Classical 2-Bit Feed-Forward Relay";
+      drawBlochCloud(cvTop, [mx, my, mz], cl, src);
+
+      const { ctx, w, h } = prepCanvas(cvBot, 210);
+      const cy = h * 0.46, cx = w * 0.5, ax = 68, bx = w - 68;
+      ctx.strokeStyle = "#2b3e5e"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(ax, cy); ctx.lineTo(bx, cy); ctx.stroke();
+      ctx.setLineDash([5, 5]); ctx.strokeStyle = "#fbbf24";
+      ctx.beginPath(); ctx.moveTo(ax, cy + 48); ctx.lineTo(bx, cy + 48); ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = "#a78bfa"; ctx.beginPath(); ctx.arc(cx, cy, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#38bdf8"; ctx.beginPath(); ctx.arc(ax, cy, 11, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#34d399"; ctx.beginPath(); ctx.arc(bx, cy, 11, 0, Math.PI * 2); ctx.fill();
+      ctx.font = "11px JetBrains Mono, monospace"; ctx.fillStyle = "#e6eef8";
+      ctx.fillText("Alice Bell", ax - 28, cy - 18);
+      ctx.fillText("SPDC EPR", cx - 26, cy - 18);
+      ctx.fillText("Bob Z^m0 X^m1", bx - 48, cy - 18);
+
+      const f = arena.q3Flight;
+      if (f < 0.55) {
+        const u = f / 0.55;
+        ctx.fillStyle = "#38bdf8";
+        ctx.beginPath(); ctx.arc(cx - u * (cx - ax), cy, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx + u * (bx - cx), cy, 5, 0, Math.PI * 2); ctx.fill();
+      } else {
+        const u = (f - 0.55) / 0.45;
+        const px = ax + u * (bx - ax);
+        ctx.fillStyle = "#fbbf24";
+        ctx.fillRect(px - 14, cy + 40, 28, 16);
+        ctx.fillStyle = "#0a0e17";
+        ctx.fillText(`${arena.q3Bell[0]}${arena.q3Bell[1]}`, px - 7, cy + 52);
+      }
+    }
+    else if (c === "Q4") {
+      let mx = 0, my = 0, mz = 0;
+      arena.q4Walkers.forEach(w => { mx += w[0]; my += w[1]; mz += w[2]; });
+      mx /= 64; my /= 64; mz /= 64;
+      setKpi(0, "Stabilizer Cycles", String(arena.events), "var(--cyan)");
+      setKpi(1, "Last Syndrome", `(${arena.q4Syndrome[0]}, ${arena.q4Syndrome[1]})`, "var(--amber)");
+      setKpi(2, "3-Qubit QEC Survival", (arena.q4CodedSurv * 100).toFixed(1) + "%", "var(--emerald)");
+      setKpi(3, "Unencoded Survival", (arena.q4UnencSurv * 100).toFixed(1) + "%", "var(--rose)");
+      ctTop.textContent = "Open-System Lindblad Walker Cloud inside Bloch Ball";
+      ctBot.textContent = "Live Logical Survival Race: 3-Qubit QEC vs. Unencoded Qubit";
+      drawBlochCloud(cvTop, [mx, my, mz], arena.q4Walkers, null);
+      const t0 = arena.q4TraceU.length ? arena.q4TraceU[0][0] : 0;
+      const t1 = Math.max(t0 + 2, arena.simTime);
+      drawLinePlot(cvBot, [t0, t1], [0, 1.05], [
+        { label: "3-Qubit QEC Protected", pts: arena.q4TraceC, color: "#34d399" },
+        { label: "Unencoded Physical", pts: arena.q4TraceU, color: "#fb7185" }
+      ], []);
+    }
+    else if (c === "D1") {
+      const d = ws.d1Dim;
+      const tot = Math.max(1, arena.d1Coinc.reduce((a, b) => a + b, 0));
+      const probs = Array.from(arena.d1Coinc, v => v / tot);
+      // Empirical mutual information I(A:B)
+      const pA = new Float64Array(d), pB = new Float64Array(d);
+      for (let i = 0; i < d; i++) for (let j = 0; j < d; j++) { pA[i] += probs[i*d+j]; pB[j] += probs[i*d+j]; }
+      let mi = 0;
+      for (let i = 0; i < d; i++) for (let j = 0; j < d; j++) {
+        const pij = probs[i*d+j];
+        if (pij > 1e-9 && pA[i] > 1e-9 && pB[j] > 1e-9) mi += pij * Math.log2(pij / (pA[i] * pB[j]));
+      }
+      setKpi(0, "Qudit Dimension d", `${d} (${d*d} joint modes)`, "var(--cyan)");
+      setKpi(1, "Coincidence Events", String(arena.events));
+      setKpi(2, "Empirical I(A:B)", `${mi.toFixed(3)} bits`, "var(--emerald)");
+      setKpi(3, "Noiseless Ceiling log2(d)", `${Math.log2(d).toFixed(3)} ebits`, "var(--violet)");
+
+      ctTop.textContent = `Live ${d}-Rail High-Dimensional Optical Waveguide / OAM Stream`;
+      ctBot.textContent = "Accumulating Two-Qudit Joint Coincidence Distribution |j, k⟩";
+      const { ctx, w, h } = prepCanvas(cvTop, 165);
+      const padL = 62, padR = 62;
+      for (let r = 0; r < d; r++) {
+        const y = 18 + (r + 0.5) * ((h - 28) / d);
+        ctx.strokeStyle = "#253652"; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+        ctx.fillStyle = "#92a5c2"; ctx.font = "10px JetBrains Mono, monospace";
+        ctx.fillText(`OAM |${r}⟩`, 8, y + 3);
+      }
+      for (const p of arena.d1Pulses) {
+        const px = padL + p.x * (w - padL - padR);
+        const lane = p.x < 0.5 ? p.laneA : p.laneB;
+        const py = 18 + (lane + 0.5) * ((h - 28) / d);
+        ctx.fillStyle = p.noisy ? "#fb7185" : `hsl(${Math.round((lane / d) * 300 + 180) % 360}, 85%, 62%)`;
+        ctx.beginPath(); ctx.arc(px, py, 4.5, 0, Math.PI * 2); ctx.fill();
+      }
+      const lbls = [];
+      for (let i = 0; i < d; i++) for (let j = 0; j < d; j++) lbls.push(`|${i}${j}⟩`);
+      drawBars(cvBot, lbls, probs, null, "#38bdf8");
+    }
+    else if (c === "K1") {
+      const qber = arena.k1Sifted > 0 ? arena.k1Errs / arena.k1Sifted : 0;
+      const rate = Math.max(0, 1 - 2 * binaryEntropy(qber));
+      const sec = qber < 0.11;
+      setKpi(0, "Sifted Key Bits", String(arena.k1Sifted), "var(--cyan)");
+      setKpi(1, "Live QBER(t)", (qber * 100).toFixed(2) + "%", sec ? "var(--emerald)" : "var(--rose)");
+      setKpi(2, "Shor-Preskill Secret Rate", rate.toFixed(3));
+      setKpi(3, "Channel Status", sec ? "SECURE (< 11%)" : "ABORTED (EVE!)", sec ? "var(--emerald)" : "var(--rose)");
+
+      const tr = document.getElementById("tape-row");
+      tr.classList.remove("hidden");
+      document.getElementById("tape-title").textContent = "Live Sifted Key Bit Tape (Green = Matched, Rose = Bit Error)";
+      document.getElementById("bit-tape").innerHTML = arena.k1Tape.map(b =>
+        `<span class="bit-chip ${b.err ? "err" : ""}">${b.bit}</span>`
+      ).join("");
+
+      ctTop.textContent = "Optical Fiber Stream: Alice (+/×) → Eve Beam-Splitter → Bob Detector";
+      ctBot.textContent = "Running Empirical QBER(t) (%) Convergence vs. 11.0% Abort Line";
+      const { ctx, w, h } = prepCanvas(cvTop, 145);
+      const ax = 68, bx = w - 68, ex = (ax + bx) * 0.5;
+      for (let l = 0; l < 2; l++) {
+        const y = 36 + l * 62;
+        ctx.strokeStyle = "#263752"; ctx.beginPath(); ctx.moveTo(ax, y); ctx.lineTo(bx, y); ctx.stroke();
+        ctx.fillStyle = "#92a5c2"; ctx.font = "11px JetBrains Mono, monospace";
+        ctx.fillText(l === 0 ? "Basis +" : "Basis ×", 8, y + 4);
+      }
+      if (ws.k1Eve > 0.01) {
+        ctx.strokeStyle = "#fb7185"; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(ex, 16); ctx.lineTo(ex, h - 16); ctx.stroke();
+        ctx.fillStyle = "#fb7185"; ctx.fillText("Eve Probe", ex - 28, h - 4);
+      }
+      for (const p of arena.k1Photons) {
+        const px = ax + p.x * (bx - ax);
+        const py = 36 + p.aBas * 62;
+        ctx.fillStyle = p.err ? "#fb7185" : (p.eveInt && p.x > 0.5 ? "#fbbf24" : (!p.keep && p.x > 0.85 ? "#5a6c88" : "#38bdf8"));
+        ctx.beginPath(); ctx.arc(px, py, 4.8, 0, Math.PI * 2); ctx.fill();
+      }
+      const t0 = arena.k1QberTrace.length ? arena.k1QberTrace[0][0] : 0;
+      const t1 = Math.max(t0 + 2, arena.simTime);
+      drawLinePlot(cvBot, [t0, t1], [0, 32], [
+        { label: "Running QBER (%)", pts: arena.k1QberTrace, color: "#fb7185" }
+      ], [{ y: 11.0, label: "11.0% Shor-Preskill Abort Bound", color: "#fbbf24" }]);
+    }
+    else if (c === "K2") {
+      document.getElementById("tape-row").classList.add("hidden");
+      const sNow = arena.k2TraceS.length ? arena.k2TraceS[arena.k2TraceS.length - 1][1] : 0;
+      const viol = sNow > 2.0;
+      setKpi(0, "Singlet Coincidences", String(arena.events), "var(--cyan)");
+      setKpi(1, "Live CHSH |S(t)|", sNow.toFixed(4), viol ? "var(--emerald)" : "var(--rose)");
+      setKpi(2, "Tsirelson Limit", "2.8284 (2√2)");
+      setKpi(3, "Bell Witness", viol ? "NONLOCAL (> 2.0)" : "COMPROMISED", viol ? "var(--emerald)" : "var(--rose)");
+
+      ctTop.textContent = "Counter-Propagating EPR Singlet Stream into Rotating 3x3 Polarizers";
+      ctBot.textContent = "Live CHSH |S(t)| Estimator Converging Across Entangled Pairs";
+      const { ctx, w, h } = prepCanvas(cvTop, 145);
+      const cx = w * 0.5, ax = 76, bx = w - 76, cy = h * 0.5;
+      ctx.strokeStyle = "#263752"; ctx.beginPath(); ctx.moveTo(ax, cy); ctx.lineTo(bx, cy); ctx.stroke();
+      ctx.fillStyle = "#a78bfa"; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#e6eef8"; ctx.font = "11px JetBrains Mono, monospace";
+      ctx.fillText("|Psi-⟩ Source", cx - 38, cy - 14);
+      ctx.fillText("Alice (a1..a3)", 8, cy - 14);
+      ctx.fillText("Bob (b1..b3)", w - 92, cy - 14);
+      for (const p of arena.k2Pairs) {
+        const lx = cx - p.r * (cx - ax), rx = cx + p.r * (bx - cx);
+        const ly = cy + (p.ia - 1) * 28 * p.r, ry = cy + (p.ib - 1) * 28 * p.r;
+        ctx.fillStyle = p.eveHit ? "#fb7185" : "#38bdf8";
+        ctx.beginPath(); ctx.arc(lx, ly, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(rx, ry, 4, 0, Math.PI * 2); ctx.fill();
+      }
+      const t0 = arena.k2TraceS.length ? arena.k2TraceS[0][0] : 0;
+      const t1 = Math.max(t0 + 2, arena.simTime);
+      drawLinePlot(cvBot, [t0, t1], [1.0, 3.0], [
+        { label: "Empirical CHSH |S(t)|", pts: arena.k2TraceS, color: "#38bdf8" }
+      ], [
+        { y: 2.8284, label: "Tsirelson 2√2 = 2.828", color: "#34d399" },
+        { y: 2.0, label: "Classical Realism Bound = 2.000", color: "#fb7185" }
+      ]);
+    }
+    else if (c === "K3") {
+      document.getElementById("tape-row").classList.add("hidden");
+      const tot = Math.max(1, arena.k3Conc + arena.k3Erase);
+      const yld = (arena.k3Conc / tot) * 100;
+      const thYld = 0.5 * Math.pow(Math.sin(ws.k3Angle * Math.PI / 180), 2) * 100;
+      setKpi(0, "Conclusive Clicks", String(arena.k3Conc), "var(--emerald)");
+      setKpi(1, "POVM Erasures", String(arena.k3Erase), "var(--text-muted)");
+      setKpi(2, "Empirical Yield", yld.toFixed(1) + "%", "var(--cyan)");
+      setKpi(3, "Theory 0.5*sin^2(θ)", thYld.toFixed(1) + "%", "var(--amber)");
+
+      ctTop.textContent = "B92 Non-Orthogonal Pulse Stream Sorting into Conclusive vs. Erasure Ports";
+      ctBot.textContent = "Running Conclusive Sifting Yield (%) Convergence";
+      const { ctx, w, h } = prepCanvas(cvTop, 145);
+      const ax = 68, mx = w * 0.55, bx = w - 88;
+      const ys = [30, 72, 114];
+      ctx.font = "10.5px JetBrains Mono, monospace"; ctx.fillStyle = "#92a5c2";
+      ctx.fillText("Port 0 (bit 0)", bx + 6, ys[0] + 4);
+      ctx.fillText("Port 1 (bit 1)", bx + 6, ys[1] + 4);
+      ctx.fillText("Erasure Dump", bx + 6, ys[2] + 4);
+      for (const p of arena.k3Pulses) {
+        const px = ax + p.x * (bx - ax);
+        const py = p.x < 0.5 ? 72 : 72 + ((p.x - 0.5) / 0.5) * (ys[p.port] - 72);
+        ctx.fillStyle = p.port === 2 ? "#64748b" : (p.err ? "#fb7185" : "#34d399");
+        ctx.beginPath(); ctx.arc(px, py, 4.4, 0, Math.PI * 2); ctx.fill();
+      }
+      const t0 = arena.k3TraceY.length ? arena.k3TraceY[0][0] : 0;
+      const t1 = Math.max(t0 + 2, arena.simTime);
+      drawLinePlot(cvBot, [t0, t1], [0, 60], [
+        { label: "Empirical Yield (%)", pts: arena.k3TraceY, color: "#38bdf8" }
+      ], [{ y: thYld, label: `Theory ${thYld.toFixed(1)}%`, color: "#fbbf24" }]);
+    }
+    else if (c === "C1") {
+      document.getElementById("tape-row").classList.add("hidden");
+      setKpi(0, "Order-Finding Shots", String(arena.events), "var(--cyan)");
+      setKpi(1, "Target Semiprime N", String(ws.c1ModN));
+      setKpi(2, "Quantum Period r", "r = " + arena.c1PeriodR, "var(--amber)");
+      setKpi(3, "Recovered Factors", arena.c1Factors ? `${arena.c1Factors[0]} × ${arena.c1Factors[1]}` : "Choose even-r base", "var(--emerald)");
+
+      ctTop.textContent = "Falling Quantum Measurement Shots Sculpting Interference Fringes";
+      ctBot.textContent = "Accumulating Inverse-QFT Frequency Histogram P_hat(y)";
+      const { ctx, w, h } = prepCanvas(cvTop, 130);
+      for (const d of arena.c1Drops) {
+        const px = 42 + d.bin * (w - 56);
+        const py = 12 + d.y * (h - 22);
+        ctx.fillStyle = "#38bdf8";
+        ctx.beginPath(); ctx.arc(px, py, 3.6, 0, Math.PI * 2); ctx.fill();
+      }
+      const tot = Math.max(1, arena.c1Bins.reduce((a, b) => a + b, 0));
+      const probs = Array.from(arena.c1Bins, v => v / tot);
+      const csz = Math.max(1, Math.floor((1 << ws.c1QubitsM) / probs.length));
+      const lbls = probs.map((_, i) => String(i * csz));
+      drawBars(cvBot, lbls, probs, null, "#38bdf8");
+    }
+    else if (c === "C2") {
+      document.getElementById("tape-row").classList.add("hidden");
+      const space = 1 << ws.c2Bits;
+      const kt = ws.c2Secret % space;
+      const kOpt = Math.max(1, Math.round((Math.PI / 4) * Math.sqrt(space)));
+      const pT = arena.c2Probs[kt] || 0;
+      setKpi(0, "Search Space N", `${space} keys`);
+      setKpi(1, "Optimal Grover k_opt", `${kOpt} reflections`, "var(--amber)");
+      setKpi(2, "Live Target Key Prob", (pT * 100).toFixed(1) + "%", "var(--emerald)");
+      setKpi(3, "Hidden Key Index", "#" + kt, "var(--cyan)");
+
+      ctTop.textContent = "2D Geometric State-Plane Rotor (|psi_perp⟩ vs. Target |w⟩)";
+      ctBot.textContent = "Live Candidate Key Probability Wave Surging & Over-Rotating";
+      const { ctx, w, h } = prepCanvas(cvTop, 205);
+      const cx = w * 0.5, cy = h * 0.54, r = Math.min(w, h) * 0.36;
+      ctx.strokeStyle = "#314563"; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx - r - 8, cy); ctx.lineTo(cx + r + 8, cy);
+      ctx.moveTo(cx, cy - r - 8); ctx.lineTo(cx, cy + r + 8); ctx.stroke();
+      ctx.fillStyle = "#92a5c2"; ctx.font = "11px JetBrains Mono, monospace";
+      ctx.fillText("|w⟩ Target", cx + 6, cy - r - 4);
+      ctx.fillText("|psi_⊥⟩", cx + r - 38, cy + 14);
+      const vx = cx + Math.cos(arena.c2Angle) * r;
+      const vy = cy - Math.sin(arena.c2Angle) * r;
+      ctx.strokeStyle = "#38bdf8"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(vx, vy); ctx.stroke();
+      ctx.fillStyle = "#34d399"; ctx.beginPath(); ctx.arc(vx, vy, 5.5, 0, Math.PI * 2); ctx.fill();
+
+      const lbls = Array.from({ length: space }, (_, i) => "k" + i);
+      drawBars(cvBot, lbls, arena.c2Probs, null, "#38bdf8");
+    }
+    else if (c === "C3") {
+      document.getElementById("tape-row").classList.add("hidden");
+      setKpi(0, "ML-KEM Handshakes", String(arena.c3Handshakes), "var(--cyan)");
+      setKpi(1, "Latest Max |e_dec|", `${arena.c3LastMax} / 832`, arena.c3LastMax < 832 ? "var(--emerald)" : "var(--rose)");
+      setKpi(2, "Decapsulation Failures", String(arena.c3Failures), arena.c3Failures === 0 ? "var(--emerald)" : "var(--rose)");
+      setKpi(3, "Ring Modulus q", "3329 (FIPS 203)");
+
+      ctTop.textContent = "Live Stream of Max Decapsulation Noise |e_dec(t)| vs. q/4 = 832 Failure Bound";
+      ctBot.textContent = "Live 2D Lattice Cloud: Exact A*s (Cyan) & Stochastic LWE Samples t = A*s + e (Rose)";
+      const t0 = arena.c3NoiseTrace.length ? arena.c3NoiseTrace[0][0] : 0;
+      const t1 = Math.max(t0 + 2, arena.simTime);
+      drawLinePlot(cvTop, [t0, t1], [0, Math.max(1050, arena.c3LastMax + 100)], [
+        { label: "Max |e_dec| per Handshake", pts: arena.c3NoiseTrace, color: "#38bdf8" }
+      ], [{ y: 832, label: "q/4 = 832 Failure Threshold", color: "#fb7185" }]);
+
+      const { ctx, w, h } = prepCanvas(cvBot, 205);
+      const cx = w * 0.5, cy = h * 0.54, sc = Math.min(w, h) / 26;
+      const b1 = [4.0, 1.1], b2 = [1.3, 3.6];
+      const toPx = (v) => [cx + v[0] * sc, cy - v[1] * sc];
+      ctx.fillStyle = "#3f5578";
+      for (let i = -4; i <= 4; i++) for (let j = -4; j <= 4; j++) {
+        const [px, py] = toPx([i*b1[0] + j*b2[0], i*b1[1] + j*b2[1]]);
+        if (px > 10 && px < w - 10 && py > 10 && py < h - 10) {
+          ctx.beginPath(); ctx.arc(px, py, 2.3, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      const orig = toPx([0, 0]), pb1 = toPx(b1), pb2 = toPx(b2);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#34d399"; ctx.beginPath(); ctx.moveTo(orig[0], orig[1]); ctx.lineTo(pb1[0], pb1[1]); ctx.stroke();
+      ctx.strokeStyle = "#a78bfa"; ctx.beginPath(); ctx.moveTo(orig[0], orig[1]); ctx.lineTo(pb2[0], pb2[1]); ctx.stroke();
+      for (const pt of arena.c3Cloud) {
+        const [sx, sy] = toPx(pt);
+        ctx.fillStyle = "rgba(251, 113, 133, 0.65)";
+        ctx.beginPath(); ctx.arc(sx, sy, 3.1, 0, Math.PI * 2); ctx.fill();
+      }
+      const [exX, exY] = toPx([2*b1[0]-b2[0], 2*b1[1]-b2[1]]);
+      ctx.fillStyle = "#38bdf8"; ctx.beginPath(); ctx.arc(exX, exY, 5.2, 0, Math.PI * 2); ctx.fill();
+    }
+    else if (c === "C4") {
+      document.getElementById("tape-row").classList.add("hidden");
+      const accPct = arena.c4Trials > 0 ? (arena.c4Acc / arena.c4Trials) * 100 : 0;
+      setKpi(0, "Candidate z Trials", String(arena.c4Trials), "var(--cyan)");
+      setKpi(1, "Accepted Uniform z", `${arena.c4Acc} (${accPct.toFixed(1)}%)`, "var(--emerald)");
+      setKpi(2, "Safety Margin beta", String(ws.c4Tau * ws.c4Eta), "var(--amber)");
+      setKpi(3, "Merkle Chain Tip", arena.c4MerkleTip.slice(0, 14));
+
+      ctTop.textContent = "Rejection-Sampling Particle Gate: Accepted Uniform Box (Emerald) vs. Boundary Aborts (Rose)";
+      ctBot.textContent = "Accumulating z = y + c*s Histogram: Secret-Leaking Raw Tails vs. Accepted Box";
+      const { ctx, w, h } = prepCanvas(cvTop, 135);
+      const gx0 = w * 0.2, gx1 = w * 0.8;
+      ctx.strokeStyle = "#34d399"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(gx0, h * 0.62); ctx.lineTo(gx1, h * 0.62); ctx.stroke();
+      ctx.strokeStyle = "#fb7185";
+      ctx.beginPath(); ctx.moveTo(20, h * 0.62); ctx.lineTo(gx0 - 6, h * 0.62);
+      ctx.moveTo(gx1 + 6, h * 0.62); ctx.lineTo(w - 20, h * 0.62); ctx.stroke();
+      for (const p of arena.c4Particles) {
+        const px = 24 + p.xNorm * (w - 48);
+        const py = p.ok ? 12 + p.y * (h - 24) : (p.y < 0.6 ? 12 + p.y * (h - 24) : h * 0.62 - (p.y - 0.6) * 55);
+        ctx.fillStyle = p.ok ? "#34d399" : "#fb7185";
+        ctx.beginPath(); ctx.arc(px, py, 3.8, 0, Math.PI * 2); ctx.fill();
+      }
+      const bmax = ws.c4Gamma1 + ws.c4Tau * ws.c4Eta;
+      const rPts = Array.from(arena.c4RawBins, (v, i) => [-bmax + (2 * bmax * (i + 0.5)) / 21, v]);
+      const aPts = Array.from(arena.c4AccBins, (v, i) => [-bmax + (2 * bmax * (i + 0.5)) / 21, v]);
+      const maxC = Math.max(20, ...arena.c4RawBins) * 1.15;
+      drawLinePlot(cvBot, [-bmax, bmax], [0, maxC], [
+        { label: "Raw z = y + c*s (leaks s)", pts: rPts, color: "#fb7185" },
+        { label: "Accepted Uniform Box", pts: aPts, color: "#34d399" }
+      ], []);
+    }
+  }
+
+  // =========================================================================
+  // 8. Navigation, Presets & Event Listeners
+  // =========================================================================
+  function syncNavChrome() {
+    const sel = document.getElementById("module-select");
+    if (sel.options.length === 0) {
+      MODULES.forEach(m => {
+        const opt = document.createElement("option");
+        opt.value = m.code; opt.textContent = `[${m.code}] ${m.title}`;
+        sel.appendChild(opt);
+      });
+    }
+    sel.value = ws.activeModule;
+    document.getElementById("seed-indicator").textContent = `RNG Seed: ${ws.seed}`;
+    document.getElementById("btn-play-pause").textContent = isPlaying ? "⏸ Pause" : "▶ Play";
+    document.querySelectorAll('button[data-action="pick-mod"]').forEach(b => {
+      b.classList.toggle("btn-active", viewMode === "workspace" && b.dataset.mod === ws.activeModule);
+    });
+    document.getElementById("btn-toggle-hub").classList.toggle("btn-active", viewMode === "hub");
+
+    const hubEl = document.getElementById("hub-view");
+    const wkEl = document.getElementById("workspace-view");
+    if (viewMode === "hub") {
+      hubEl.classList.remove("hidden"); wkEl.classList.add("hidden");
+      renderHub();
+    } else {
+      hubEl.classList.add("hidden"); wkEl.classList.remove("hidden");
+      buildModuleScaffold();
+      drawLiveFrame();
+    }
+    renderSlotsTable();
+  }
+
+  function renderSlotsTable() {
+    const wrap = document.getElementById("slots-table-wrap");
+    const names = Object.keys(savedSlots);
+    if (!names.length) {
+      wrap.innerHTML = `<div style="color:var(--text-muted);font-size:12px;">No saved presets yet — click <strong>Save Preset</strong> or press <strong>F5</strong>.</div>`;
+      return;
+    }
+    wrap.innerHTML = `<table class="data-table"><thead><tr><th>Preset</th><th>Module</th><th>SHA-256</th><th>Actions</th></tr></thead><tbody>` +
+      names.map(n => `<tr><td>${escHtml(n)}</td><td>${escHtml(savedSlots[n].mod)}</td><td>${savedSlots[n].sha256.slice(0,12)}</td><td>
+        <button type="button" class="btn" data-action="slot-load" data-slot="${escHtml(n)}">Load</button>
+        <button type="button" class="btn" data-action="slot-del" data-slot="${escHtml(n)}">Del</button>
+      </td></tr>`).join("") + `</tbody></table>`;
+  }
+
+  function savePreset(name) {
+    const clean = (name || "quicksave").trim() || "quicksave";
+    const payload = JSON.stringify(ws, null, 2);
+    const hash = sha256HexStr(payload);
+    savedSlots[clean] = { mod: ws.activeModule, payload_json: payload, sha256: hash };
+    try { localStorage.setItem("quantacrypt_v2_slots", JSON.stringify(savedSlots)); } catch (_) {}
+    document.getElementById("status-message").textContent = `Saved preset '${clean}' (SHA-256: ${hash.slice(0,12)}).`;
+    renderSlotsTable();
+  }
+
+  function loadPreset(name) {
+    const entry = savedSlots[name];
+    if (!entry) { document.getElementById("status-message").textContent = `Preset '${name}' not found.`; return; }
+    if (sha256HexStr(entry.payload_json) !== entry.sha256) {
+      document.getElementById("status-message").textContent = `SHA-256 mismatch on '${name}'!`;
+      return;
+    }
+    ws = Object.assign(makeDefaultParams(), JSON.parse(entry.payload_json));
+    viewMode = "workspace";
+    resetStream();
+    syncNavChrome();
+  }
+
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-action]");
+    if (!btn) return;
+    const act = btn.dataset.action;
+    if (act === "toggle-hub") {
+      viewMode = viewMode === "hub" ? "workspace" : "hub";
+      syncNavChrome();
+    } else if (act === "pick-mod") {
+      ws.activeModule = btn.dataset.mod;
+      viewMode = "workspace";
+      resetStream();
+      syncNavChrome();
+    } else if (act === "play-pause") {
+      isPlaying = !isPlaying;
+      document.getElementById("btn-play-pause").textContent = isPlaying ? "⏸ Pause" : "▶ Play";
+    } else if (act === "reset-stream") {
+      resetStream();
+      drawLiveFrame();
+    } else if (act === "reseed") {
+      ws.seed = (ws.seed + 7919) >>> 0;
+      document.getElementById("seed-indicator").textContent = `RNG Seed: ${ws.seed}`;
+      resetStream();
+      drawLiveFrame();
+    } else if (act === "c1-mod") {
+      ws.c1ModN = parseInt(btn.dataset.n, 10);
+      ws.c1BaseA = 2;
+      resetStream();
+      syncNavChrome();
+    } else if (act === "a1-dist") {
+      ws.a1Dist = parseInt(btn.dataset.d, 10);
+      resetStream();
+      syncNavChrome();
+    } else if (act === "q5-hops") {
+      ws.q5Hops = parseInt(btn.dataset.h, 10);
+      resetStream();
+      syncNavChrome();
+    } else if (act === "open-worksets") {
+      document.getElementById("workset-modal").classList.add("open");
+    } else if (act === "open-help") {
+      document.getElementById("help-modal").classList.add("open");
+    } else if (act === "close-modals") {
+      document.getElementById("workset-modal").classList.remove("open");
+      document.getElementById("help-modal").classList.remove("open");
+    } else if (act === "save-slot") {
+      savePreset(document.getElementById("slot-name-input").value);
+    } else if (act === "quick-save") {
+      savePreset("quicksave");
+    } else if (act === "quick-load") {
+      loadPreset("quicksave");
+    } else if (act === "slot-load") {
+      loadPreset(btn.dataset.slot);
+      document.getElementById("workset-modal").classList.remove("open");
+    } else if (act === "slot-del") {
+      delete savedSlots[btn.dataset.slot];
+      try { localStorage.setItem("quantacrypt_v2_slots", JSON.stringify(savedSlots)); } catch (_) {}
+      renderSlotsTable();
+    } else if (act === "reset-defaults") {
+      const cur = ws.activeModule;
+      ws = makeDefaultParams(); ws.activeModule = cur;
+      resetStream(); syncNavChrome();
+    } else if (act === "export-json") {
+      const payload = JSON.stringify(ws, null, 2);
+      const env = {
+        format: "quantacrypt-workset", version: "2.0.0",
+        label: document.getElementById("slot-name-input").value || "preset",
+        saved_unix_secs: Math.floor(Date.now() / 1000),
+        payload_json: payload, sha256_hex: sha256HexStr(payload)
+      };
+      const url = URL.createObjectURL(new Blob([JSON.stringify(env, null, 2)], { type: "application/json" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = (env.label || "preset") + ".qworkset.json";
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    }
+  });
+
+  document.getElementById("module-select").addEventListener("change", (e) => {
+    ws.activeModule = e.target.value;
+    viewMode = "workspace";
+    resetStream();
+    syncNavChrome();
+  });
+
+  document.getElementById("speed-select").addEventListener("change", (e) => {
+    speedMult = parseFloat(e.target.value) || 1.0;
+  });
+
+  document.addEventListener("input", (e) => {
+    const sl = e.target.dataset && e.target.dataset.slider;
+    if (!sl) return;
+    const raw = parseFloat(e.target.value);
+    const intKeys = ["i3Angle","i4Stages","d1Dim","d1ShiftA","k3Angle","c1BaseA","c1QubitsM","c2Bits","c2Secret","c3Eta","c4Gamma1","c4Eta","c4Tau","a3DepthP","d2Dim","a5Depth"];
+    ws[sl] = intKeys.includes(sl) ? Math.round(raw) : raw;
+    const valSpan = document.getElementById("val-" + sl);
+    if (valSpan) {
+      const decimals = e.target.step.includes(".") ? e.target.step.split(".")[1].length : 0;
+      valSpan.textContent = ws[sl].toFixed(decimals) + (e.target.dataset.unit || "");
+    }
+    if (["i1Sep","i1Path","i2Phase","i3Angle","i4Stages","d1Dim","d1ShiftA","c1BaseA","c1QubitsM","c2Bits","c4Gamma1","c4Eta","c4Tau","a2BondR","a3DepthP","a3Gamma","a4RawP","q5LinkP","d2Dim","d2Tilt","d2Depol","a5Depth","a5RawP"].includes(sl)) {
+      resetStream();
+      if (sl === "d1Dim" || sl === "c2Bits") buildModuleScaffold();
+    }
+  });
+
+  document.addEventListener("change", (e) => {
+    const tg = e.target.dataset && e.target.dataset.toggle;
+    if (tg) {
+      ws[tg] = e.target.checked;
+      resetStream();
+      drawLiveFrame();
+      return;
+    }
+    const sc = e.target.dataset && e.target.dataset.select;
+    if (sc) {
+      ws[sc] = e.target.value;
+      resetStream();
+      drawLiveFrame();
+    }
+  });
+
+  document.getElementById("import-json-input").addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const env = JSON.parse(String(reader.result));
+        if (env.sha256_hex && sha256HexStr(env.payload_json) !== env.sha256_hex) {
+          document.getElementById("status-message").textContent = "Import rejected: SHA-256 digest mismatch!";
+          return;
+        }
+        const loaded = env.payload_json ? JSON.parse(env.payload_json) : env;
+        ws = Object.assign(makeDefaultParams(), loaded);
+        document.getElementById("workset-modal").classList.remove("open");
+        resetStream(); syncNavChrome();
+      } catch (err) {
+        document.getElementById("status-message").textContent = "JSON error: " + err.message;
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "SELECT")) return;
+    if (e.code === "Space") {
+      e.preventDefault();
+      isPlaying = !isPlaying;
+      document.getElementById("btn-play-pause").textContent = isPlaying ? "⏸ Pause" : "▶ Play";
+    } else if (e.key === "r" || e.key === "R") {
+      resetStream(); drawLiveFrame();
+    } else if (e.key === "F1") {
+      e.preventDefault(); document.getElementById("help-modal").classList.toggle("open");
+    } else if (e.key === "F5") {
+      e.preventDefault(); savePreset("quicksave");
+    } else if (e.key === "F9") {
+      e.preventDefault(); loadPreset("quicksave");
+    } else if (e.key === "Escape") {
+      const wm = document.getElementById("workset-modal");
+      const hm = document.getElementById("help-modal");
+      if (wm.classList.contains("open") || hm.classList.contains("open")) {
+        wm.classList.remove("open"); hm.classList.remove("open");
+      } else {
+        viewMode = "hub"; syncNavChrome();
+      }
+    }
+  });
+
+  document.getElementById("citations-list").innerHTML = MODULES.map(m =>
+    `<div><strong>[${m.code}]</strong> <a href="${m.refUrl}" target="_blank" rel="noopener noreferrer">${escHtml(m.refLabel)}</a>${m.refUrl2 ? ` (<a href="${m.refUrl2}" target="_blank" rel="noopener noreferrer">NIST SP 800-208</a>)` : ''}</div>`
+  ).join("");
+
+  // Start single clean requestAnimationFrame loop
+  let rafId = null;
+  let lastTs = performance.now();
+  function loop(now) {
+    const dt = (now - lastTs) / 1000;
+    lastTs = now;
+    stepArena(dt);
+    drawLiveFrame();
+    rafId = requestAnimationFrame(loop);
+  }
+
+  window.onload = function() {
+    if (rafId !== null) cancelAnimationFrame(rafId);
+    resetStream();
+    syncNavChrome();
+    lastTs = performance.now();
+    rafId = requestAnimationFrame(loop);
+  };
+})();
+</script>
+</body>
+</html>
