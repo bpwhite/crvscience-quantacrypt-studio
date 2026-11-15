@@ -1,9 +1,10 @@
 cff-version: 1.2.0
-message: "If you use this software, please cite both the software repository and the CRV Science Apps hub."
+message: "If you use this software or its validation datasets, please cite both the software repository and the accompanying CRV Science Apps monograph."
 type: software
 title: "QuantaCrypt-Studio: 23-Module Passive Stochastic Quantum Circuit, Photonic QKD, and Post-Quantum Cryptography Simulator"
 version: "2.2.0"
 date-released: "2026-11-15"
+doi: "10.5281/zenodo.24244089"
 url: "https://crvscience.com/apps"
 repository-code: "https://github.com/bpwhite/crvscience-quantacrypt-studio"
 license: "MIT"
@@ -17,3 +18,15 @@ keywords:
   - "post-quantum cryptography"
   - "surface codes"
   - "Rust"
+preferred-citation:
+  type: article
+  title: "QuantaCrypt-Studio: Simulating Quantum Circuits, Quantum Key Distribution, and Post-Quantum Cryptography"
+  authors:
+    - family-names: "White"
+      given-names: "Bryan P."
+      affiliation: "CRV Science Labs"
+  year: 2026
+  journal: "CRV Science Apps Preprints"
+  doi: "10.5281/zenodo.24244089"
+  url: "https://crvscience.com/apps/preprints/quantacrypt-studio-quantum-circuits-pqc"
+  notes: "Preprint ID: APP-PREPRINT-16"

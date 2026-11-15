@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 use eframe::egui;
 use quantacrypt_studio::cryptanalysis::{run_grover_key_search, run_shor_cryptanalysis};
 use quantacrypt_studio::curriculum::ModuleId;
-use quantacrypt_studio::gui::QuantaCryptApp;
+use quantacrypt_studio::gui::{render_headless_screenshot, QuantaCryptApp};
 use quantacrypt_studio::pqc_lattice::{run_ml_kem_lab, MlKemProfile};
 use quantacrypt_studio::qkd::{simulate_b92, simulate_bb84, simulate_e91};
 use quantacrypt_studio::qudit::{run_qudit_lab, QuditPreset};
@@ -30,6 +30,14 @@ struct Cli {
     /// Path to SQLite WAL workset save database
     #[arg(long, default_value = "quantacrypt_worksets.sqlite3")]
     db: PathBuf,
+
+    /// Render a 1600x1000 offscreen GPU PNG screenshot to this path and exit
+    #[arg(long)]
+    headless_screenshot: Option<PathBuf>,
+
+    /// View preset for `--headless-screenshot` (1 = Circuit/Statevector, 2 = Photonic QKD BB84, 3 = Lattice PQC ML-KEM)
+    #[arg(long, default_value_t = 1)]
+    screenshot_view: u8,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -239,6 +247,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
         }
+        return Ok(());
+    }
+
+    if let Some(out_path) = cli.headless_screenshot {
+        render_headless_screenshot(cli.db, &out_path, cli.screenshot_view)?;
         return Ok(());
     }
 

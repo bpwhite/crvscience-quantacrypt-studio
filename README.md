@@ -1,5 +1,7 @@
 # QuantaCrypt Studio (`quantacrypt-studio` v2.2.0)
 
+![QuantaCrypt Studio — 4-Qubit GHZ Circuit & Born-Rule Shot Observatory](validation/headless_screenshot.png)
+
 **QuantaCrypt Studio (`v2.2.0`)** is a zero-unsafe (`#![forbid(unsafe_code)]`), native safe-Rust **23-module passive stochastic quantum & cryptography observatory** (`eframe` / `egui` `0.31`) and headless CLI (`clap`) spanning foundational wave-particle experiments through fault-tolerant surface codes, variational quantum eigensolvers, QAOA, and NIST post-quantum cryptography.
 
 ## 23 Autonomous Stochastic Modules Across 6 Groups

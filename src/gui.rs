@@ -752,10 +752,8 @@ impl QuantaCryptApp {
             self.show_help_modal = open;
         }
     }
-}
 
-impl eframe::App for QuantaCryptApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    pub fn ui_step(&mut self, ctx: &egui::Context) {
         ctx.set_visuals(egui::Visuals::dark());
         if ctx.input(|i| i.key_pressed(egui::Key::Space)) { self.arena.playing = !self.arena.playing; }
         if ctx.input(|i| i.key_pressed(egui::Key::R)) { self.arena.reset_stream(self.ws.seed, self.ws.active_module); }
@@ -780,4 +778,232 @@ impl eframe::App for QuantaCryptApp {
         }
         self.render_modals(ctx);
     }
+}
+
+impl eframe::App for QuantaCryptApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.ui_step(ctx);
+    }
+}
+
+fn block_on_future<F: std::future::Future>(fut: F) -> F::Output {
+    struct NoopWake;
+    impl std::task::Wake for NoopWake {
+        fn wake(self: std::sync::Arc<Self>) {}
+    }
+    let waker = std::task::Waker::from(std::sync::Arc::new(NoopWake));
+    let mut cx = std::task::Context::from_waker(&waker);
+    let mut fut = std::pin::pin!(fut);
+    loop {
+        match fut.as_mut().poll(&mut cx) {
+            std::task::Poll::Ready(val) => return val,
+            std::task::Poll::Pending => std::thread::yield_now(),
+        }
+    }
+}
+
+fn write_rgba_png(
+    path: &std::path::Path,
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let expected = (width as usize) * (height as usize) * 4;
+    if rgba.len() != expected {
+        return Err(format!("Unexpected RGBA buffer length {} (expected {})", rgba.len(), expected).into());
+    }
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let file = std::fs::File::create(path)?;
+    let w = std::io::BufWriter::new(file);
+    let mut encoder = png::Encoder::new(w, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header()?;
+    writer.write_image_data(rgba)?;
+    Ok(())
+}
+
+/// Render an offscreen 1600x1000 RGBA PNG screenshot without opening any OS GUI window.
+pub fn render_headless_screenshot(
+    db_path: PathBuf,
+    out_path: &std::path::Path,
+    view: u8,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use eframe::egui_wgpu::{wgpu, Renderer, ScreenDescriptor};
+
+    let width: u32 = 1600;
+    let height: u32 = 1000;
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+    let adapter = block_on_future(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: None,
+        force_fallback_adapter: false,
+    }))
+    .ok_or("No GPU adapter available for offscreen rendering")?;
+    let (device, queue) = block_on_future(adapter.request_device(
+        &wgpu::DeviceDescriptor {
+            label: Some("quantacrypt-offscreen-device"),
+            ..Default::default()
+        },
+        None,
+    ))
+    .map_err(|e| format!("Failed to request offscreen GPU device: {e}"))?;
+
+    let format = wgpu::TextureFormat::Rgba8Unorm;
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("quantacrypt-offscreen-target"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let bytes_per_row = width * 4;
+    let staging = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("quantacrypt-offscreen-staging"),
+        size: (bytes_per_row * height) as u64,
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let mut renderer = Renderer::new(&device, format, None, 1, false);
+    let egui_ctx = egui::Context::default();
+    egui_ctx.set_pixels_per_point(1.0);
+
+    let mut app = QuantaCryptApp::new(db_path, true, Some(ModuleId::Q2CircuitEntanglement));
+    match view {
+        2 => {
+            app.ws.active_module = ModuleId::K1Bb84Qkd;
+            app.ws.k1_eve_rate = 0.25;
+            app.arena.reset_stream(app.ws.seed, ModuleId::K1Bb84Qkd);
+        }
+        3 => {
+            app.ws.active_module = ModuleId::C3MlKemLattice;
+            app.ws.c3_profile = MlKemProfile::MlKem768;
+            app.arena.reset_stream(app.ws.seed, ModuleId::C3MlKemLattice);
+        }
+        _ => {
+            app.ws.active_module = ModuleId::Q2CircuitEntanglement;
+            app.ws.q2_circuit = QuantumCircuit::preset_ghz(4);
+            app.ws.q2_step_cursor = app.ws.q2_circuit.ops.len();
+            app.arena.reset_stream(app.ws.seed, ModuleId::Q2CircuitEntanglement);
+        }
+    }
+    app.stage = AppStage::ModuleWorkspace;
+    for _ in 0..80 {
+        app.arena.step(0.05, &app.ws);
+    }
+
+    for frame_idx in 0..4 {
+        let raw_input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(width as f32, height as f32),
+            )),
+            viewports: std::iter::once((
+                egui::ViewportId::ROOT,
+                egui::ViewportInfo {
+                    native_pixels_per_point: Some(1.0),
+                    ..Default::default()
+                },
+            ))
+            .collect(),
+            time: Some(frame_idx as f64 / 60.0),
+            predicted_dt: 1.0 / 60.0,
+            ..Default::default()
+        };
+        let full_output = egui_ctx.run(raw_input, |ctx| {
+            app.ui_step(ctx);
+        });
+        for (id, image_delta) in &full_output.textures_delta.set {
+            renderer.update_texture(&device, &queue, *id, image_delta);
+        }
+        let paint_jobs = egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
+        let screen_descriptor = ScreenDescriptor {
+            size_in_pixels: [width, height],
+            pixels_per_point: 1.0,
+        };
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("quantacrypt-offscreen-encoder"),
+        });
+        let user_cmd_bufs = renderer.update_buffers(
+            &device,
+            &queue,
+            &mut encoder,
+            &paint_jobs,
+            &screen_descriptor,
+        );
+        {
+            let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("quantacrypt-offscreen-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &texture_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            let mut render_pass = render_pass.forget_lifetime();
+            renderer.render(&mut render_pass, &paint_jobs, &screen_descriptor);
+        }
+        if frame_idx == 3 {
+            encoder.copy_texture_to_buffer(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyBufferInfo {
+                    buffer: &staging,
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(bytes_per_row),
+                        rows_per_image: Some(height),
+                    },
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        queue.submit(user_cmd_bufs.into_iter().chain(std::iter::once(encoder.finish())));
+        device.poll(wgpu::Maintain::Wait);
+        for id in &full_output.textures_delta.free {
+            renderer.free_texture(id);
+        }
+    }
+
+    let slice = staging.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |res| {
+        let _ = tx.send(res);
+    });
+    device.poll(wgpu::Maintain::Wait);
+    rx.recv()
+        .map_err(|e| format!("GPU readback channel error: {e}"))?
+        .map_err(|e| format!("GPU buffer map failed: {e}"))?;
+    let mapped = slice.get_mapped_range();
+    write_rgba_png(out_path, width, height, &mapped)?;
+    drop(mapped);
+    staging.unmap();
+    Ok(())
 }
