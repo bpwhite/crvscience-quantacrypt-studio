@@ -1,3 +1,18 @@
+// Copyright (C) 2026 CRV Science Network (https://crvscience.com)
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://gnu.org>.
+
 //! NIST Post-Quantum Cryptography (PQC) Lattice & Rejection-Sampling Suite:
 //! - C3: NIST FIPS 203 ML-KEM (Module-LWE Key-Encapsulation Mechanism) over `R_q = Z_q[X]/(X^n + 1)` (`q = 3329`)
 //!       with both inspectable pedagogical ring (`n = 16, k = 2`) and full FIPS 203 ring dimensions (`n = 256, k in {2, 3, 4}`),
