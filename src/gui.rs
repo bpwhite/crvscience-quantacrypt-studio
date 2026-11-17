@@ -896,7 +896,7 @@ pub fn render_headless_screenshot(
     let egui_ctx = egui::Context::default();
     egui_ctx.set_pixels_per_point(1.0);
 
-    let mut app = QuantaCryptApp::new(db_path, true, Some(ModuleId::Q2CircuitEntanglement));
+    let mut app = QuantaCryptApp::new(db_path, true, Some(ModuleId::I1DoubleSlit));
     match view {
         2 => {
             app.ws.active_module = ModuleId::K1Bb84Qkd;
@@ -908,15 +908,22 @@ pub fn render_headless_screenshot(
             app.ws.c3_profile = MlKemProfile::MlKem768;
             app.arena.reset_stream(app.ws.seed, ModuleId::C3MlKemLattice);
         }
-        _ => {
+        4 => {
             app.ws.active_module = ModuleId::Q2CircuitEntanglement;
             app.ws.q2_circuit = QuantumCircuit::preset_ghz(4);
             app.ws.q2_step_cursor = app.ws.q2_circuit.ops.len();
             app.arena.reset_stream(app.ws.seed, ModuleId::Q2CircuitEntanglement);
         }
+        _ => {
+            app.ws.active_module = ModuleId::I1DoubleSlit;
+            app.ws.i1_slit_sep = 4.5;
+            app.ws.i1_which_path = 0.0;
+            app.arena.reset_stream(app.ws.seed, ModuleId::I1DoubleSlit);
+        }
     }
     app.stage = AppStage::ModuleWorkspace;
-    for _ in 0..80 {
+    let steps = if view == 1 { 260 } else { 80 };
+    for _ in 0..steps {
         app.arena.step(0.05, &app.ws);
     }
 
