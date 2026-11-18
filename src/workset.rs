@@ -255,6 +255,14 @@ impl PortableWorksetEnvelope {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorksetSlotSummary {
+    pub slot_name: String,
+    pub active_module: String,
+    pub mastered_count: usize,
+    pub updated_unix: u64,
+}
+
 pub struct WorksetRepository {
     conn: Connection,
 }
@@ -330,12 +338,51 @@ impl WorksetRepository {
 
         let env = PortableWorksetEnvelope {
             format: "quantacrypt-workset".to_string(),
-            version: "2.1.0".to_string(),
+            version: "2.2.0".to_string(),
             label: slot_name.to_string(),
             saved_unix_secs: saved_unix.max(0) as u64,
             payload_json,
             sha256_hex: sha256_stored,
         };
         env.unpack()
+    }
+
+    pub fn list_slots(&self) -> Result<Vec<WorksetSlotSummary>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT slot_name, active_module, mastered_count, updated_unix
+                 FROM workset_slots
+                 ORDER BY updated_unix DESC, slot_name ASC",
+            )
+            .map_err(|e| format!("SQLite list_slots prepare error: {}", e))?;
+        let rows = stmt
+            .query_map([], |row| {
+                let mastered: i64 = row.get(2)?;
+                let updated: i64 = row.get(3)?;
+                Ok(WorksetSlotSummary {
+                    slot_name: row.get(0)?,
+                    active_module: row.get(1)?,
+                    mastered_count: mastered.max(0) as usize,
+                    updated_unix: updated.max(0) as u64,
+                })
+            })
+            .map_err(|e| format!("SQLite list_slots query error: {}", e))?;
+        let mut out = Vec::new();
+        for item in rows {
+            out.push(item.map_err(|e| format!("SQLite list_slots row error: {}", e))?);
+        }
+        Ok(out)
+    }
+
+    pub fn delete_slot(&self, slot_name: &str) -> Result<bool, String> {
+        let affected = self
+            .conn
+            .execute(
+                "DELETE FROM workset_slots WHERE slot_name = ?1",
+                params![slot_name],
+            )
+            .map_err(|e| format!("SQLite delete_slot error: {}", e))?;
+        Ok(affected > 0)
     }
 }

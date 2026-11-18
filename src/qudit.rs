@@ -151,7 +151,7 @@ impl QuditRegister {
             .rev()
             .map(|d| char::from_digit(*d as u32, 10).unwrap_or('?'))
             .collect();
-        format!("|{}\u{27E9}", s)
+        format!("|{}>", s)
     }
 
     /// Applies single-qudit `d x d` operator `op` to `target` qudit (`0..num_qudits`).

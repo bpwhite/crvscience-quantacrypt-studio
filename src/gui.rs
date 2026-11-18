@@ -19,15 +19,20 @@ use crate::cryptanalysis::{run_grover_key_search, SHOR_PRESET_SEMIPRIMES};
 use crate::curriculum::{CurriculumGroup, ModuleId};
 use crate::density::NoiseChannelKind;
 use crate::plotter::{
-    draw_amplitude_phase_bars, draw_bloch_sphere_cloud, draw_circuit_diagram,
-    draw_lattice_2d_cloud, draw_phosphor_screen, draw_photon_stream, draw_qaoa_ring_graph, draw_repeater_chain,
+    draw_amplitude_phase_bars, draw_amplitude_phase_bars_with_overlay, draw_bb84_bit_tape,
+    draw_bloch_sphere_cloud, draw_circuit_diagram, draw_density_heatmap, draw_lattice_2d_cloud,
+    draw_phosphor_screen, draw_photon_stream_labeled, draw_qaoa_ring_graph, draw_repeater_chain,
     draw_scientific_plot, draw_surface_code_grid, PlotHThreshold, PlotSeries,
 };
 use crate::pqc_lattice::{run_ml_kem_lab, MlKemProfile};
 use crate::qudit::{run_qudit_lab, QuditPreset};
-use crate::statevector::QuantumCircuit;
-use crate::stochastic_sim::{h2_fci_and_ansatz_energy, StochasticArena};
-use crate::workset::{PortableWorksetEnvelope, WorksetRepository, WorksetState};
+use crate::statevector::{GateOp, QuantumCircuit, Statevector};
+use crate::stochastic_sim::{
+    double_slit_analytical_bin_probs, h2_fci_and_ansatz_energy, StochasticArena,
+};
+use crate::workset::{
+    PortableWorksetEnvelope, WorksetRepository, WorksetSlotSummary, WorksetState,
+};
 use eframe::egui::{self, Color32, RichText, ScrollArea, Ui, Vec2};
 use std::f64::consts::PI;
 use std::path::PathBuf;
@@ -48,13 +53,35 @@ pub struct QuantaCryptApp {
     pub bloch_pitch: f32,
     pub show_workset_modal: bool,
     pub show_help_modal: bool,
+    pub show_about_modal: bool,
     pub slot_name_input: String,
     pub json_path_input: String,
+    pub slot_list_cache: Vec<WorksetSlotSummary>,
+    pub modal_feedback: Option<String>,
+    pub q2_target_qubit: usize,
+    pub q2_control_qubit: usize,
+    pub q2_second_control: usize,
+    pub q2_angle_rad: f64,
+    pub q2_show_reduced_rho: bool,
+    pub q2_qasm_error: Option<String>,
 }
 
 impl QuantaCryptApp {
     pub fn new(db_path: PathBuf, start_in_workspace: bool, initial_module: Option<ModuleId>) -> Self {
-        let repo = WorksetRepository::open_file(&db_path).ok();
+        let (repo, status_banner) = match WorksetRepository::open_file(&db_path) {
+            Ok(r) => (
+                Some(r),
+                "Passive Stochastic Stream Active (23 Modules) — Space: Play/Pause | R: Reset | F5/F9: Save/Load.".to_string(),
+            ),
+            Err(e) => (
+                None,
+                format!("SQLite unavailable ({}); running without persistent slots.", e),
+            ),
+        };
+        let slot_list_cache = repo
+            .as_ref()
+            .and_then(|r| r.list_slots().ok())
+            .unwrap_or_default();
         let mut ws = WorksetState::default();
         if let Some(m) = initial_module {
             ws.active_module = m;
@@ -70,30 +97,111 @@ impl QuantaCryptApp {
             ws,
             arena,
             repo,
-            status_banner: "Passive Stochastic Stream Active (23 Modules) — Space: Play/Pause | R: Reset | F5/F9: Save/Load.".to_string(),
+            status_banner,
             bloch_yaw: 0.62,
             bloch_pitch: 0.34,
             show_workset_modal: false,
             show_help_modal: false,
+            show_about_modal: false,
             slot_name_input: "session_alpha".to_string(),
             json_path_input: "session_alpha.qworkset.json".to_string(),
+            slot_list_cache,
+            modal_feedback: None,
+            q2_target_qubit: 0,
+            q2_control_qubit: 0,
+            q2_second_control: 1,
+            q2_angle_rad: std::f64::consts::FRAC_PI_2,
+            q2_show_reduced_rho: false,
+            q2_qasm_error: None,
         }
     }
 
-    fn quick_save(&mut self) {
+    fn refresh_slot_list(&mut self) {
         if let Some(repo) = &self.repo {
-            if let Ok(hash) = repo.save_slot("quicksave", &self.ws) {
-                self.status_banner = format!("Saved preset 'quicksave' (SHA-256: {}…)", &hash[..12]);
+            match repo.list_slots() {
+                Ok(list) => self.slot_list_cache = list,
+                Err(e) => {
+                    let msg = format!("Failed listing SQLite slots: {}", e);
+                    self.status_banner = msg.clone();
+                    self.modal_feedback = Some(msg);
+                }
+            }
+        } else {
+            self.slot_list_cache.clear();
+        }
+    }
+
+    fn sync_q2_indices(&mut self) {
+        let n = self.ws.q2_circuit.num_qubits.max(1);
+        self.q2_target_qubit = self.q2_target_qubit.min(n - 1);
+        self.q2_control_qubit = self.q2_control_qubit.min(n - 1);
+        self.q2_second_control = self.q2_second_control.min(n - 1);
+        if n >= 2 && self.q2_control_qubit == self.q2_target_qubit {
+            self.q2_target_qubit = (self.q2_control_qubit + 1) % n;
+        }
+        if n >= 3 && (self.q2_second_control == self.q2_control_qubit || self.q2_second_control == self.q2_target_qubit) {
+            for candidate in 0..n {
+                if candidate != self.q2_control_qubit && candidate != self.q2_target_qubit {
+                    self.q2_second_control = candidate;
+                    break;
+                }
+            }
+        }
+        self.ws.q2_bipartite_cut = self.ws.q2_bipartite_cut.clamp(1, n.saturating_sub(1).max(1));
+    }
+
+    fn push_q2_gate(&mut self, op: GateOp) {
+        self.ws.q2_circuit.ops.push(op);
+        self.ws.q2_step_cursor = self.ws.q2_circuit.ops.len();
+        self.ws.q2_qasm_buffer = self.ws.q2_circuit.to_openqasm();
+        self.q2_qasm_error = None;
+        self.arena.reset_stream(self.ws.seed, ModuleId::Q2CircuitEntanglement);
+    }
+
+    fn quick_save(&mut self) {
+        match &self.repo {
+            Some(repo) => match repo.save_slot("quicksave", &self.ws) {
+                Ok(hash) => {
+                    let msg = format!("Saved preset 'quicksave' (SHA-256: {}...)", &hash[..12]);
+                    self.status_banner = msg.clone();
+                    self.modal_feedback = Some(msg);
+                    self.refresh_slot_list();
+                }
+                Err(e) => {
+                    let msg = format!("Quick-save error: {}", e);
+                    self.status_banner = msg.clone();
+                    self.modal_feedback = Some(msg);
+                }
+            },
+            None => {
+                let msg = "Quick-save failed: SQLite repository is unavailable.".to_string();
+                self.status_banner = msg.clone();
+                self.modal_feedback = Some(msg);
             }
         }
     }
 
     fn quick_load(&mut self) {
-        if let Some(repo) = &self.repo {
-            if let Ok(loaded) = repo.load_slot("quicksave") {
-                self.ws = loaded;
-                self.arena.reset_stream(self.ws.seed, self.ws.active_module);
-                self.status_banner = "Loaded preset 'quicksave' and restarted stream.".to_string();
+        match &self.repo {
+            Some(repo) => match repo.load_slot("quicksave") {
+                Ok(loaded) => {
+                    self.ws = loaded;
+                    self.sync_q2_indices();
+                    self.arena.reset_stream(self.ws.seed, self.ws.active_module);
+                    let msg = "Loaded preset 'quicksave' and restarted stream.".to_string();
+                    self.status_banner = msg.clone();
+                    self.modal_feedback = Some(msg);
+                }
+                Err(e) => {
+                    let msg = format!("Quick-load error: {}", e);
+                    self.status_banner = msg.clone();
+                    self.modal_feedback = Some(msg);
+                }
+            },
+            None => {
+                let msg = "Quick-load failed: SQLite repository is unavailable.".to_string();
+                self.status_banner = msg.clone();
+                self.modal_feedback = Some(msg);
             }
         }
     }
@@ -103,7 +211,7 @@ impl QuantaCryptApp {
             egui::menu::bar(ui, |ui| {
                 ui.label(RichText::new("QuantaCrypt Studio v2.2").strong().color(Color32::from_rgb(56, 189, 248)));
                 ui.separator();
-                if ui.selectable_label(self.stage == AppStage::CurriculumHub, "⊞ Observatory Hub (23)").clicked() {
+                if ui.selectable_label(self.stage == AppStage::CurriculumHub, "Observatory Hub (23)").clicked() {
                     self.stage = AppStage::CurriculumHub;
                 }
                 if ui.selectable_label(self.stage == AppStage::ModuleWorkspace && self.ws.active_module == ModuleId::Q3Teleportation, "Q3 Teleport").clicked() {
@@ -131,18 +239,24 @@ impl QuantaCryptApp {
                     }
                 });
                 ui.separator();
-                if ui.button(if self.arena.playing { "⏸ Pause" } else { "▶ Play" }).clicked() {
+                if ui.button(if self.arena.playing { "Pause" } else { "Play" }).clicked() {
                     self.arena.playing = !self.arena.playing;
                 }
-                if ui.button("↻ Reset").clicked() {
+                if ui.button("Reset").clicked() {
                     self.arena.reset_stream(self.ws.seed, self.ws.active_module);
                 }
                 ui.add(egui::Slider::new(&mut self.arena.speed_mult, 0.25..=4.0).text("Speed x").fixed_decimals(2));
                 if ui.button("Presets").clicked() {
                     self.show_workset_modal = !self.show_workset_modal;
+                    if self.show_workset_modal {
+                        self.refresh_slot_list();
+                    }
                 }
                 if ui.button("Citations (F1)").clicked() {
                     self.show_help_modal = !self.show_help_modal;
+                }
+                if ui.button("About").clicked() {
+                    self.show_about_modal = !self.show_about_modal;
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.monospace(format!("t = {:.1}s | Events: {}", self.arena.sim_time, self.arena.total_events));
@@ -228,21 +342,158 @@ impl QuantaCryptApp {
                     ui.add(egui::Slider::new(&mut self.ws.q1_phi, -PI..=PI).text("Drive Axis Azimuth"));
                 }
                 ModuleId::Q2CircuitEntanglement => {
+                    ui.label(RichText::new("Circuit Presets").strong());
                     ui.horizontal_wrapped(|ui| {
-                        if ui.button("Bell |Phi+⟩").clicked() {
+                        if ui.button("Bell |Phi+>").clicked() {
                             self.ws.q2_circuit = QuantumCircuit::preset_bell_phi_plus();
                             self.ws.q2_step_cursor = self.ws.q2_circuit.ops.len();
+                            self.ws.q2_qasm_buffer = self.ws.q2_circuit.to_openqasm();
+                            self.q2_qasm_error = None;
+                            self.sync_q2_indices();
                             self.arena.reset_stream(self.ws.seed, m);
                         }
                         if ui.button("4-Qubit GHZ").clicked() {
                             self.ws.q2_circuit = QuantumCircuit::preset_ghz(4);
                             self.ws.q2_step_cursor = self.ws.q2_circuit.ops.len();
+                            self.ws.q2_bipartite_cut = 2;
+                            self.ws.q2_qasm_buffer = self.ws.q2_circuit.to_openqasm();
+                            self.q2_qasm_error = None;
+                            self.sync_q2_indices();
                             self.arena.reset_stream(self.ws.seed, m);
                         }
                         if ui.button("3-Qubit QFT").clicked() {
                             self.ws.q2_circuit = QuantumCircuit::preset_qft(3);
                             self.ws.q2_step_cursor = self.ws.q2_circuit.ops.len();
+                            self.ws.q2_qasm_buffer = self.ws.q2_circuit.to_openqasm();
+                            self.q2_qasm_error = None;
+                            self.sync_q2_indices();
                             self.arena.reset_stream(self.ws.seed, m);
+                        }
+                    });
+                    ui.separator();
+
+                    let mut n_q = self.ws.q2_circuit.num_qubits;
+                    ui.horizontal(|ui| {
+                        ui.label(format!("Qubits: {}", n_q));
+                        if ui.button("-").clicked() && n_q > 1 {
+                            n_q -= 1;
+                            self.ws.q2_circuit.num_qubits = n_q;
+                            self.ws.q2_circuit.ops.retain(|op| op.max_qubit_index() < n_q);
+                            self.ws.q2_step_cursor = self.ws.q2_step_cursor.min(self.ws.q2_circuit.ops.len());
+                            self.ws.q2_qasm_buffer = self.ws.q2_circuit.to_openqasm();
+                            self.q2_qasm_error = None;
+                            self.sync_q2_indices();
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                        if ui.button("+").clicked() && n_q < 6 {
+                            n_q += 1;
+                            self.ws.q2_circuit.num_qubits = n_q;
+                            self.ws.q2_qasm_buffer = self.ws.q2_circuit.to_openqasm();
+                            self.q2_qasm_error = None;
+                            self.sync_q2_indices();
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                    });
+
+                    let max_cut = n_q.saturating_sub(1).max(1);
+                    self.ws.q2_bipartite_cut = self.ws.q2_bipartite_cut.clamp(1, max_cut);
+                    if n_q >= 2 {
+                        ui.add(egui::Slider::new(&mut self.ws.q2_bipartite_cut, 1..=max_cut).text("Cut k"));
+                    }
+
+                    let max_ops = self.ws.q2_circuit.ops.len();
+                    self.ws.q2_step_cursor = self.ws.q2_step_cursor.min(max_ops);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(format!("Step {}/{}", self.ws.q2_step_cursor, max_ops));
+                        if ui.small_button("|<").clicked() {
+                            self.ws.q2_step_cursor = 0;
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                        if ui.small_button("<").clicked() {
+                            self.ws.q2_step_cursor = self.ws.q2_step_cursor.saturating_sub(1);
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                        if ui.small_button(">").clicked() {
+                            self.ws.q2_step_cursor = (self.ws.q2_step_cursor + 1).min(max_ops);
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                        if ui.small_button(">|").clicked() {
+                            self.ws.q2_step_cursor = max_ops;
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                        if ui.small_button("Undo").clicked() && !self.ws.q2_circuit.ops.is_empty() {
+                            self.ws.q2_circuit.ops.pop();
+                            self.ws.q2_step_cursor = self.ws.q2_circuit.ops.len();
+                            self.ws.q2_qasm_buffer = self.ws.q2_circuit.to_openqasm();
+                            self.q2_qasm_error = None;
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                        if ui.small_button("Clear").clicked() {
+                            self.ws.q2_circuit.ops.clear();
+                            self.ws.q2_step_cursor = 0;
+                            self.ws.q2_qasm_buffer = self.ws.q2_circuit.to_openqasm();
+                            self.q2_qasm_error = None;
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                    });
+
+                    ui.separator();
+                    ui.label(RichText::new("Interactive Gate Palette").strong());
+                    self.q2_target_qubit = self.q2_target_qubit.min(n_q - 1);
+                    self.q2_control_qubit = self.q2_control_qubit.min(n_q - 1);
+                    self.q2_second_control = self.q2_second_control.min(n_q - 1);
+                    ui.add(egui::Slider::new(&mut self.q2_target_qubit, 0..=(n_q - 1)).text("Target q[t]"));
+                    if n_q >= 2 {
+                        ui.add(egui::Slider::new(&mut self.q2_control_qubit, 0..=(n_q - 1)).text("Control q[c]"));
+                    }
+                    if n_q >= 3 {
+                        ui.add(egui::Slider::new(&mut self.q2_second_control, 0..=(n_q - 1)).text("Ctrl2 q[c2]"));
+                    }
+                    ui.add(egui::Slider::new(&mut self.q2_angle_rad, -PI..=PI).text("Angle (rad)"));
+                    ui.horizontal(|ui| {
+                        if ui.small_button("pi/4").clicked() { self.q2_angle_rad = std::f64::consts::FRAC_PI_4; }
+                        if ui.small_button("pi/2").clicked() { self.q2_angle_rad = std::f64::consts::FRAC_PI_2; }
+                        if ui.small_button("pi").clicked() { self.q2_angle_rad = PI; }
+                    });
+
+                    let t = self.q2_target_qubit;
+                    let c = self.q2_control_qubit;
+                    let c2 = self.q2_second_control;
+                    let th = self.q2_angle_rad;
+
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.small_button("H").clicked() { self.push_q2_gate(GateOp::H(t)); }
+                        if ui.small_button("X").clicked() { self.push_q2_gate(GateOp::X(t)); }
+                        if ui.small_button("Y").clicked() { self.push_q2_gate(GateOp::Y(t)); }
+                        if ui.small_button("Z").clicked() { self.push_q2_gate(GateOp::Z(t)); }
+                        if ui.small_button("S").clicked() { self.push_q2_gate(GateOp::S(t)); }
+                        if ui.small_button("Sdg").clicked() { self.push_q2_gate(GateOp::Sdg(t)); }
+                        if ui.small_button("T").clicked() { self.push_q2_gate(GateOp::T(t)); }
+                        if ui.small_button("Tdg").clicked() { self.push_q2_gate(GateOp::Tdg(t)); }
+                        if ui.small_button("Rx").clicked() { self.push_q2_gate(GateOp::Rx { target: t, theta: th }); }
+                        if ui.small_button("Ry").clicked() { self.push_q2_gate(GateOp::Ry { target: t, theta: th }); }
+                        if ui.small_button("Rz").clicked() { self.push_q2_gate(GateOp::Rz { target: t, theta: th }); }
+                        if ui.small_button("P").clicked() { self.push_q2_gate(GateOp::Phase { target: t, lambda: th }); }
+                        if ui.small_button("M").clicked() { self.push_q2_gate(GateOp::Measure(t)); }
+                    });
+
+                    let two_ok = n_q >= 2 && c != t;
+                    let three_ok = n_q >= 3 && c != t && c2 != t && c != c2;
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.add_enabled(two_ok, egui::Button::new("CNOT").small()).clicked() {
+                            self.push_q2_gate(GateOp::Cnot { control: c, target: t });
+                        }
+                        if ui.add_enabled(two_ok, egui::Button::new("CZ").small()).clicked() {
+                            self.push_q2_gate(GateOp::Cz { control: c, target: t });
+                        }
+                        if ui.add_enabled(two_ok, egui::Button::new("CP").small()).clicked() {
+                            self.push_q2_gate(GateOp::CPhase { control: c, target: t, lambda: th });
+                        }
+                        if ui.add_enabled(two_ok, egui::Button::new("SWAP").small()).clicked() {
+                            self.push_q2_gate(GateOp::Swap(c, t));
+                        }
+                        if ui.add_enabled(three_ok, egui::Button::new("CCX").small()).clicked() {
+                            self.push_q2_gate(GateOp::Toffoli { c1: c, c2, target: t });
                         }
                     });
                 }
@@ -397,24 +648,40 @@ impl QuantaCryptApp {
 
     fn render_center_workspace(&mut self, ui: &mut Ui) {
         let m = self.ws.active_module;
+        let panel_avail_h = ui.available_height();
         ScrollArea::vertical().show(ui, |ui| {
             ui.monospace(m.key_equation());
             ui.separator();
+            let avail = (panel_avail_h - 34.0_f32).clamp(380.0_f32, 1200.0_f32);
+            let avail_sub = (avail - 24.0_f32).max(356.0_f32);
 
             match m {
                 ModuleId::I1DoubleSlit => {
-                    draw_phosphor_screen(ui, &self.arena.i1_hits, 195.0, "2D Single-Quantum Phosphor Detector Screen (Dot-by-Dot Arrival)");
+                    let h_top = (avail * 0.44_f32).max(195.0_f32);
+                    let h_bot = (avail - h_top - 8.0_f32).max(205.0_f32);
+                    draw_phosphor_screen(ui, &self.arena.i1_hits, h_top, "2D Single-Quantum Phosphor Detector Screen (Dot-by-Dot Arrival)");
                     let tot = self.arena.i1_bins.iter().sum::<u64>().max(1) as f64;
                     let probs: Vec<f64> = self.arena.i1_bins.iter().map(|&c| (c as f64) / tot).collect();
+                    let theory = double_slit_analytical_bin_probs(self.ws.i1_slit_sep, self.ws.i1_which_path, probs.len());
                     let labels: Vec<String> = (0..probs.len()).map(|i| format!("{}", (i as i32) - 32)).collect();
-                    draw_amplitude_phase_bars(ui, &labels, &probs, None, 205.0, "Accumulating Screen Intensity Profile I(x)");
+                    draw_amplitude_phase_bars_with_overlay(
+                        ui,
+                        &labels,
+                        &probs,
+                        None,
+                        Some((&theory, Color32::from_rgb(251, 191, 36), "Analytical Young")),
+                        h_bot,
+                        "Accumulating Screen Intensity Profile I(x) vs. Analytical Young Envelope",
+                    );
                 }
                 ModuleId::I2MachZehnder => {
                     ui.monospace(format!(
                         "Port D1 (Bright): {}  |  Port D2 (Dark / Interaction-Free): {}  |  Blocked/Absorbed: {}",
                         self.arena.i2_counts[0], self.arena.i2_counts[1], self.arena.i2_counts[2]
                     ));
-                    draw_photon_stream(ui, &self.arena.i2_photons, 2, self.ws.i2_arm_blocker, 175.0, "Mach-Zehnder Upper & Lower Interferometer Arms");
+                    let h_top = (avail_sub * 0.44_f32).max(175.0_f32);
+                    let h_bot = (avail_sub - h_top - 8.0_f32).max(195.0_f32);
+                    draw_photon_stream_labeled(ui, &self.arena.i2_photons, 2, self.ws.i2_arm_blocker, "Arm Blocker", h_top, "Mach-Zehnder Upper & Lower Interferometer Arms");
                     let tot = self.arena.i2_counts.iter().sum::<u64>().max(1) as f64;
                     let probs = vec![
                         self.arena.i2_counts[0] as f64 / tot,
@@ -422,18 +689,20 @@ impl QuantaCryptApp {
                         self.arena.i2_counts[2] as f64 / tot,
                     ];
                     let labels = vec!["D1 Bright".to_string(), "D2 Dark/IFM".to_string(), "Absorbed".to_string()];
-                    draw_amplitude_phase_bars(ui, &labels, &probs, None, 195.0, "Empirical Mach-Zehnder Port Outcome Ratios");
+                    draw_amplitude_phase_bars(ui, &labels, &probs, None, h_bot, "Empirical Mach-Zehnder Port Outcome Ratios");
                 }
                 ModuleId::I3SternGerlach => {
                     ui.monospace(format!(
                         "Final SG3(+Z): {}  |  Final SG3(-Z Revived!): {}  |  Filtered at SG1/SG2: {}",
                         self.arena.i3_counts[0], self.arena.i3_counts[1], self.arena.i3_counts[2]
                     ));
-                    draw_photon_stream(ui, &self.arena.i3_atoms, 2, self.ws.i3_insert_mid_filter, 175.0, "Sequential Stern-Gerlach Spin-1/2 Atomic Beam (SG1:Z -> SG2:theta -> SG3:Z)");
+                    let h_top = (avail_sub * 0.44_f32).max(175.0_f32);
+                    let h_bot = (avail_sub - h_top - 8.0_f32).max(190.0_f32);
+                    draw_photon_stream_labeled(ui, &self.arena.i3_atoms, 2, self.ws.i3_insert_mid_filter, "SG2 Filter", h_top, "Sequential Stern-Gerlach Spin-1/2 Atomic Beam (SG1:Z -> SG2:theta -> SG3:Z)");
                     let pass_tot = (self.arena.i3_counts[0] + self.arena.i3_counts[1]).max(1) as f64;
                     let probs = vec![self.arena.i3_counts[0] as f64 / pass_tot, self.arena.i3_counts[1] as f64 / pass_tot];
-                    let labels = vec!["|+Z⟩ Out".to_string(), "|-Z⟩ Revived".to_string()];
-                    draw_amplitude_phase_bars(ui, &labels, &probs, None, 190.0, "SG3 Output Spin Fractions");
+                    let labels = vec!["|+Z> Out".to_string(), "|-Z> Revived".to_string()];
+                    draw_amplitude_phase_bars(ui, &labels, &probs, None, h_bot, "SG3 Output Spin Fractions");
                 }
                 ModuleId::I4QuantumZeno => {
                     let tot = (self.arena.i4_transmitted + self.arena.i4_absorbed).max(1) as f64;
@@ -450,36 +719,181 @@ impl QuantaCryptApp {
                     draw_scientific_plot(
                         ui,
                         "Quantum Zeno Polarization Survival (%) Across N Intermediate Projective Polarizers",
-                        "t",
+                        "Time t (s)",
                         "Survival (%)",
                         (t0, t1),
                         (0.0, 102.0),
                         &[PlotSeries { label: "Empirical Survival (%)", points: &pts, color: Color32::from_rgb(56, 189, 248) }],
                         &[PlotHThreshold { y: th_surv, label: "Analytical Zeno Limit", color: Color32::from_rgb(52, 211, 153) }],
-                        230.0,
+                        avail_sub.max(240.0_f32),
                     );
                 }
                 ModuleId::Q1BlochSingleQubit => {
                     let mean = self.arena.q1_trace_xyz.back().map(|x| x.1).unwrap_or([0.0, 0.0, 1.0]);
-                    draw_bloch_sphere_cloud(ui, Vec2::new(ui.available_width().min(420.0), 285.0), mean, None, &self.arena.q1_walkers, &mut self.bloch_yaw, &mut self.bloch_pitch, "Stochastic Rabi & Quantum-Jump Bloch Cloud");
+                    let h_top = (avail * 0.54_f32).max(260.0_f32);
+                    let h_bot = (avail - h_top - 8.0_f32).max(190.0_f32);
+                    draw_bloch_sphere_cloud(ui, Vec2::new(ui.available_width().min(h_top * 1.4_f32), h_top), mean, None, &self.arena.q1_walkers, &mut self.bloch_yaw, &mut self.bloch_pitch, "Stochastic Rabi & Quantum-Jump Bloch Cloud");
                     let t_min = self.arena.q1_trace_xyz.front().map(|p| p.0).unwrap_or(0.0);
                     let t_max = (t_min + 0.1).max(self.arena.sim_time);
                     let x_pts: Vec<(f64, f64)> = self.arena.q1_trace_xyz.iter().map(|&(t, b)| (t, b[0])).collect();
                     let y_pts: Vec<(f64, f64)> = self.arena.q1_trace_xyz.iter().map(|&(t, b)| (t, b[1])).collect();
                     let z_pts: Vec<(f64, f64)> = self.arena.q1_trace_xyz.iter().map(|&(t, b)| (t, b[2])).collect();
-                    draw_scientific_plot(ui, "Live Ensemble (<X>, <Y>, <Z>)", "t", "<sigma>", (t_min, t_max), (-1.05, 1.05), &[
+                    draw_scientific_plot(ui, "Live Ensemble (<X>, <Y>, <Z>)", "Time t (s)", "<sigma>", (t_min, t_max), (-1.05, 1.05), &[
                         PlotSeries { label: "<X>", points: &x_pts, color: Color32::from_rgb(56, 189, 248) },
                         PlotSeries { label: "<Y>", points: &y_pts, color: Color32::from_rgb(52, 211, 153) },
                         PlotSeries { label: "<Z>", points: &z_pts, color: Color32::from_rgb(251, 191, 36) },
-                    ], &[], 190.0);
+                    ], &[], h_bot);
                 }
                 ModuleId::Q2CircuitEntanglement => {
-                    draw_circuit_diagram(ui, &self.ws.q2_circuit, self.ws.q2_step_cursor, &self.arena.q2_fault_sparks, 185.0);
+                    let n = self.ws.q2_circuit.num_qubits.max(1);
+                    let cut = self.ws.q2_bipartite_cut.clamp(1, n.saturating_sub(1).max(1));
+                    let sv = Statevector::execute_circuit(&self.ws.q2_circuit, Some(self.ws.q2_step_cursor), self.ws.seed);
+                    let ebits = sv.bipartite_entanglement_ebits(cut);
+                    let use_full = n <= 4 && !self.q2_show_reduced_rho;
+                    let rho = if use_full {
+                        sv.full_density_matrix().unwrap_or_else(|| sv.reduced_subsystem_rho(cut.min(4)))
+                    } else {
+                        sv.reduced_subsystem_rho(cut.min(4))
+                    };
+                    let purity = rho.purity();
+                    ui.monospace(format!(
+                        "Qubits: {}  |  Gates: {} (Step {}/{})  |  S(rho_A, cut={}) = {:.4} ebits  |  Purity Tr(rho^2) = {:.4}",
+                        n,
+                        self.ws.q2_circuit.ops.len(),
+                        self.ws.q2_step_cursor.min(self.ws.q2_circuit.ops.len()),
+                        self.ws.q2_circuit.ops.len(),
+                        cut,
+                        ebits,
+                        purity
+                    ));
+
+                    let h_diag = (avail_sub * 0.27_f32).clamp(155.0_f32, 230.0_f32);
+                    draw_circuit_diagram(ui, &self.ws.q2_circuit, self.ws.q2_step_cursor, &self.arena.q2_fault_sparks, h_diag);
+
+                    let rem_h = (avail_sub - h_diag - 14.0_f32).max(280.0_f32);
                     let tot = self.arena.q2_shot_counts.iter().sum::<u64>().max(1) as f64;
                     let probs: Vec<f64> = self.arena.q2_shot_counts.iter().map(|&c| (c as f64) / tot).collect();
-                    let n = self.ws.q2_circuit.num_qubits;
-                    let labels: Vec<String> = (0..probs.len()).map(|i| format!("|{:0w$b}⟩", i, w = n)).collect();
-                    draw_amplitude_phase_bars(ui, &labels, &probs, None, 210.0, "Accumulating Empirical Born-Rule Shot Histogram");
+                    let labels: Vec<String> = (0..probs.len()).map(|i| format!("|{:0w$b}>", i, w = n)).collect();
+
+                    ui.columns(2, |cols| {
+                        draw_amplitude_phase_bars(
+                            &mut cols[0],
+                            &labels,
+                            &probs,
+                            None,
+                            rem_h,
+                            "Accumulating Empirical Born-Rule Shot Histogram",
+                        );
+
+                        if n <= 4 {
+                            cols[1].horizontal(|ui| {
+                                ui.label(RichText::new("Density Matrix View:").small());
+                                if ui.selectable_label(!self.q2_show_reduced_rho, "Full |psi><psi|").clicked() {
+                                    self.q2_show_reduced_rho = false;
+                                }
+                                if ui.selectable_label(self.q2_show_reduced_rho, format!("Reduced rho_A (q[0..{}])", cut)).clicked() {
+                                    self.q2_show_reduced_rho = true;
+                                }
+                            });
+                        }
+                        let heat_sz = (rem_h * 0.44_f32).clamp(130.0_f32, 220.0_f32);
+                        let heat_title = if use_full {
+                            format!("Full Density Matrix |psi><psi| ({}x{})", rho.dim, rho.dim)
+                        } else {
+                            format!("Reduced Density Matrix rho_A ({}x{})", rho.dim, rho.dim)
+                        };
+                        draw_density_heatmap(&mut cols[1], &rho, heat_sz, &heat_title);
+
+                        cols[1].add_space(4.0_f32);
+                        cols[1].horizontal_wrapped(|ui| {
+                            ui.label(RichText::new("OpenQASM 2.0 Editor").strong());
+                            if ui.small_button("Apply OpenQASM").clicked() {
+                                match QuantumCircuit::from_openqasm(&self.ws.q2_qasm_buffer) {
+                                    Ok(circ) => {
+                                        self.ws.q2_circuit = circ;
+                                        self.ws.q2_step_cursor = self.ws.q2_circuit.ops.len();
+                                        self.sync_q2_indices();
+                                        self.q2_qasm_error = None;
+                                        self.status_banner = format!(
+                                            "Applied OpenQASM 2.0 circuit ({} qubits, {} gates).",
+                                            self.ws.q2_circuit.num_qubits,
+                                            self.ws.q2_circuit.ops.len()
+                                        );
+                                        self.arena.reset_stream(self.ws.seed, ModuleId::Q2CircuitEntanglement);
+                                    }
+                                    Err(e) => {
+                                        self.q2_qasm_error = Some(e.clone());
+                                        self.status_banner = format!("OpenQASM parse error: {}", e);
+                                    }
+                                }
+                            }
+                            if ui.small_button("Sync").clicked() {
+                                self.ws.q2_qasm_buffer = self.ws.q2_circuit.to_openqasm();
+                                self.q2_qasm_error = None;
+                            }
+                            if ui.small_button("Open .qasm").clicked() {
+                                if let Some(path) = rfd::FileDialog::new()
+                                    .add_filter("OpenQASM 2.0", &["qasm", "txt"])
+                                    .pick_file()
+                                {
+                                    match std::fs::read_to_string(&path) {
+                                        Ok(src) => {
+                                            self.ws.q2_qasm_buffer = src.clone();
+                                            match QuantumCircuit::from_openqasm(&src) {
+                                                Ok(circ) => {
+                                                    self.ws.q2_circuit = circ;
+                                                    self.ws.q2_step_cursor = self.ws.q2_circuit.ops.len();
+                                                    self.sync_q2_indices();
+                                                    self.q2_qasm_error = None;
+                                                    self.status_banner = format!("Loaded OpenQASM from {}", path.display());
+                                                    self.arena.reset_stream(self.ws.seed, ModuleId::Q2CircuitEntanglement);
+                                                }
+                                                Err(e) => {
+                                                    self.q2_qasm_error = Some(e.clone());
+                                                    self.status_banner = format!("OpenQASM parse error in {}: {}", path.display(), e);
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            let msg = format!("Failed reading {}: {}", path.display(), e);
+                                            self.q2_qasm_error = Some(msg.clone());
+                                            self.status_banner = msg;
+                                        }
+                                    }
+                                }
+                            }
+                            if ui.small_button("Save .qasm").clicked() {
+                                if let Some(path) = rfd::FileDialog::new()
+                                    .add_filter("OpenQASM 2.0", &["qasm"])
+                                    .set_file_name("circuit.qasm")
+                                    .save_file()
+                                {
+                                    match std::fs::write(&path, &self.ws.q2_qasm_buffer) {
+                                        Ok(()) => {
+                                            self.status_banner = format!("Saved OpenQASM to {}", path.display());
+                                        }
+                                        Err(e) => {
+                                            let msg = format!("Failed writing {}: {}", path.display(), e);
+                                            self.q2_qasm_error = Some(msg.clone());
+                                            self.status_banner = msg;
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                        if let Some(err) = &self.q2_qasm_error {
+                            cols[1].colored_label(Color32::from_rgb(251, 113, 133), err);
+                        }
+                        let editor_h = (rem_h - heat_sz - 96.0_f32).max(105.0_f32);
+                        ScrollArea::vertical().id_salt("q2_qasm_editor_scroll").max_height(editor_h).show(&mut cols[1], |ui| {
+                            ui.add(
+                                egui::TextEdit::multiline(&mut self.ws.q2_qasm_buffer)
+                                    .code_editor()
+                                    .desired_width(f32::INFINITY)
+                                    .desired_rows(6),
+                            );
+                        });
+                    });
                 }
                 ModuleId::Q3Teleportation => {
                     let src = [self.ws.q3_theta.sin() * self.ws.q3_phi.cos(), self.ws.q3_theta.sin() * self.ws.q3_phi.sin(), self.ws.q3_theta.cos()];
@@ -488,7 +902,9 @@ impl QuantaCryptApp {
                         let inv = 1.0 / (cloud.len() as f64);
                         [cloud.iter().map(|b| b[0]).sum::<f64>() * inv, cloud.iter().map(|b| b[1]).sum::<f64>() * inv, cloud.iter().map(|b| b[2]).sum::<f64>() * inv]
                     };
-                    draw_bloch_sphere_cloud(ui, Vec2::new(ui.available_width().min(420.0), 305.0), mean, Some((src, "Alice Target")), &cloud, &mut self.bloch_yaw, &mut self.bloch_pitch, "Bob Teleported Ensemble vs. Alice Source");
+                    let h = avail.max(320.0_f32);
+                    let w = ui.available_width().min(h * 1.25_f32).max(360.0_f32);
+                    draw_bloch_sphere_cloud(ui, Vec2::new(w, h), mean, Some((src, "Alice Target")), &cloud, &mut self.bloch_yaw, &mut self.bloch_pitch, "Bob Teleported Ensemble vs. Alice Source");
                 }
                 ModuleId::Q4OpenSystemsQec => {
                     let inv = 1.0 / (self.arena.q4_walkers.len() as f64);
@@ -497,89 +913,109 @@ impl QuantaCryptApp {
                         self.arena.q4_walkers.iter().map(|b| b[1]).sum::<f64>() * inv,
                         self.arena.q4_walkers.iter().map(|b| b[2]).sum::<f64>() * inv,
                     ];
-                    draw_bloch_sphere_cloud(ui, Vec2::new(ui.available_width().min(390.0), 255.0), mean, None, &self.arena.q4_walkers, &mut self.bloch_yaw, &mut self.bloch_pitch, "Monte-Carlo Open-System Walker Cloud");
+                    let h_top = (avail * 0.52_f32).max(250.0_f32);
+                    let h_bot = (avail - h_top - 8.0_f32).max(190.0_f32);
+                    draw_bloch_sphere_cloud(ui, Vec2::new(ui.available_width().min(h_top * 1.4_f32), h_top), mean, None, &self.arena.q4_walkers, &mut self.bloch_yaw, &mut self.bloch_pitch, "Monte-Carlo Open-System Walker Cloud");
                     let t0 = self.arena.q4_survival_history.front().map(|x| x.0).unwrap_or(0.0);
                     let t1 = (t0 + 0.1).max(self.arena.sim_time);
                     let u_pts: Vec<(f64, f64)> = self.arena.q4_survival_history.iter().map(|&(t, u, _)| (t, u)).collect();
                     let c_pts: Vec<(f64, f64)> = self.arena.q4_survival_history.iter().map(|&(t, _, c)| (t, c)).collect();
-                    draw_scientific_plot(ui, "Live Stabilizer Survival: 3-Qubit QEC vs. Unencoded", "t", "Survival", (t0, t1), (0.0, 1.05), &[
+                    draw_scientific_plot(ui, "Live Stabilizer Survival: 3-Qubit QEC vs. Unencoded", "Time t (s)", "Survival", (t0, t1), (0.0, 1.05), &[
                         PlotSeries { label: "Unencoded", points: &u_pts, color: Color32::from_rgb(251, 113, 133) },
                         PlotSeries { label: "3-Qubit QEC", points: &c_pts, color: Color32::from_rgb(52, 211, 153) },
-                    ], &[], 190.0);
+                    ], &[], h_bot);
                 }
                 ModuleId::D1QuditWeylLab => {
                     let d = self.ws.d1_dimension_d;
-                    draw_photon_stream(ui, &self.arena.d1_pulses, d, false, 165.0, "High-Dimensional Optical Rail / OAM Stream");
+                    let h_top = (avail * 0.44_f32).max(165.0_f32);
+                    let h_bot = (avail - h_top - 8.0_f32).max(205.0_f32);
+                    draw_photon_stream_labeled(ui, &self.arena.d1_pulses, d, false, "", h_top, "High-Dimensional Optical Rail / OAM Stream");
                     let rep = run_qudit_lab(d, QuditPreset::BellMaximallyEntangledPair, self.ws.d1_shift_a, 0);
                     let tot = self.arena.d1_coincidences.iter().sum::<u64>().max(1) as f64;
                     let probs: Vec<f64> = self.arena.d1_coincidences.iter().map(|&c| (c as f64) / tot).collect();
-                    draw_amplitude_phase_bars(ui, &rep.basis_labels, &probs, Some(&rep.phases_rad), 205.0, "Live Empirical 2-Qudit Coincidence Distribution");
+                    draw_amplitude_phase_bars(ui, &rep.basis_labels, &probs, Some(&rep.phases_rad), h_bot, "Live Empirical 2-Qudit Coincidence Distribution");
                 }
                 ModuleId::K1Bb84Qkd => {
-                    draw_photon_stream(ui, &self.arena.qkd_photons, 2, self.ws.k1_eve_rate > 0.01, 150.0, "Live BB84 Polarized Photon Stream (+ / x)");
+                    let h_stream = (avail * 0.28_f32).clamp(145.0_f32, 210.0_f32);
+                    let h_tape = 114.0_f32;
+                    let h_plot = (avail - h_stream - h_tape - 14.0_f32).max(200.0_f32);
+                    draw_photon_stream_labeled(
+                        ui,
+                        &self.arena.qkd_photons,
+                        2,
+                        self.ws.k1_eve_rate > 0.01,
+                        "Eve Interceptor",
+                        h_stream,
+                        "Live BB84 Polarized Photon Stream (+ / x)",
+                    );
+                    draw_bb84_bit_tape(ui, &self.arena.k1_bit_tape, h_tape);
                     let t0 = self.arena.k1_qber_trace.front().map(|x| x.0).unwrap_or(0.0);
                     let t1 = (t0 + 0.1).max(self.arena.sim_time);
                     let q_pts: Vec<(f64, f64)> = self.arena.k1_qber_trace.iter().copied().collect();
-                    draw_scientific_plot(ui, "Running Empirical QBER(t) (%) vs. 11.0% Abort Bound", "t", "QBER (%)", (t0, t1), (0.0, 32.0), &[
+                    draw_scientific_plot(ui, "Running Empirical QBER(t) (%) vs. 11.0% Abort Bound", "Time t (s)", "QBER (%)", (t0, t1), (0.0, 32.0), &[
                         PlotSeries { label: "Running QBER (%)", points: &q_pts, color: Color32::from_rgb(251, 113, 133) },
-                    ], &[PlotHThreshold { y: 11.0, label: "11.0% Abort Threshold", color: Color32::from_rgb(251, 191, 36) }], 205.0);
+                    ], &[PlotHThreshold { y: 11.0, label: "11.0% Abort Threshold", color: Color32::from_rgb(251, 191, 36) }], h_plot);
                 }
                 ModuleId::K2E91BellChsh => {
                     let t0 = self.arena.k2_chsh_trace.front().map(|x| x.0).unwrap_or(0.0);
                     let t1 = (t0 + 0.1).max(self.arena.sim_time);
                     let s_pts: Vec<(f64, f64)> = self.arena.k2_chsh_trace.iter().copied().collect();
-                    draw_scientific_plot(ui, "Live Empirical CHSH |S(t)| Estimator", "t", "|S|", (t0, t1), (1.0, 3.0), &[
+                    draw_scientific_plot(ui, "Live Empirical CHSH |S(t)| Estimator", "Time t (s)", "|S|", (t0, t1), (1.0, 3.0), &[
                         PlotSeries { label: "CHSH |S(t)|", points: &s_pts, color: Color32::from_rgb(56, 189, 248) },
                     ], &[
                         PlotHThreshold { y: 2.8284, label: "Tsirelson 2*sqrt(2)", color: Color32::from_rgb(52, 211, 153) },
                         PlotHThreshold { y: 2.0, label: "Classical Bell Bound 2.0", color: Color32::from_rgb(251, 113, 133) },
-                    ], 235.0);
+                    ], avail.max(240.0_f32));
                 }
                 ModuleId::K3B92NonOrthogonal => {
                     let t0 = self.arena.k3_yield_trace.front().map(|x| x.0).unwrap_or(0.0);
                     let t1 = (t0 + 0.1).max(self.arena.sim_time);
                     let y_pts: Vec<(f64, f64)> = self.arena.k3_yield_trace.iter().copied().collect();
-                    draw_scientific_plot(ui, "Live B92 Conclusive Sifting Yield (%)", "t", "Yield (%)", (t0, t1), (0.0, 60.0), &[
+                    draw_scientific_plot(ui, "Live B92 Conclusive Sifting Yield (%)", "Time t (s)", "Yield (%)", (t0, t1), (0.0, 60.0), &[
                         PlotSeries { label: "Conclusive Sift (%)", points: &y_pts, color: Color32::from_rgb(56, 189, 248) },
-                    ], &[], 225.0);
+                    ], &[], avail.max(240.0_f32));
                 }
                 ModuleId::C1ShorRsa => {
                     ui.monospace(format!("Shots: {}  |  Locked Period r: {:?}  |  Factors: {:?}", self.arena.total_events, self.arena.c1_locked_r, self.arena.c1_locked_factors));
                     let tot = self.arena.c1_bin_counts.iter().sum::<u64>().max(1) as f64;
                     let probs: Vec<f64> = self.arena.c1_bin_counts.iter().map(|&c| (c as f64) / tot).collect();
                     let labels: Vec<String> = (0..probs.len()).map(|i| format!("{}", i * 4)).collect();
-                    draw_amplitude_phase_bars(ui, &labels, &probs, None, 225.0, "Empirical Inverse-QFT Resonance Peaks Emerging Shot-by-Shot");
+                    draw_amplitude_phase_bars(ui, &labels, &probs, None, avail_sub.max(240.0_f32), "Empirical Inverse-QFT Resonance Peaks Emerging Shot-by-Shot");
                 }
                 ModuleId::C2GroverSymmetric => {
                     let rep = run_grover_key_search(self.ws.c2_key_bits, self.ws.c2_secret_key, self.arena.c2_live_iter);
                     let cap = rep.state_probabilities.len().min(64);
                     let labels: Vec<String> = (0..cap).map(|i| format!("k{}", i)).collect();
-                    draw_amplitude_phase_bars(ui, &labels, &rep.state_probabilities[..cap], None, 225.0, "Live Grover Wavepacket Surge & Over-Rotation Cycle");
+                    draw_amplitude_phase_bars(ui, &labels, &rep.state_probabilities[..cap], None, avail.max(240.0_f32), "Live Grover Wavepacket Surge & Over-Rotation Cycle");
                 }
                 ModuleId::C3MlKemLattice => {
                     let rep = run_ml_kem_lab(self.ws.c3_profile, self.ws.c3_eta, self.ws.seed);
                     let t0 = self.arena.c3_max_noise_history.front().map(|x| x.0).unwrap_or(0.0);
                     let t1 = (t0 + 0.1).max(self.arena.sim_time);
                     let n_pts: Vec<(f64, f64)> = self.arena.c3_max_noise_history.iter().copied().collect();
-                    draw_scientific_plot(ui, "Live Max Decapsulation Noise |e_dec| vs. q/4 = 832", "t", "Max |e_dec|", (t0, t1), (0.0, 1100.0), &[
+                    let h_top = (avail * 0.44_f32).max(190.0_f32);
+                    let h_bot = (avail - h_top - 8.0_f32).max(220.0_f32);
+                    draw_scientific_plot(ui, "Live Max Decapsulation Noise |e_dec| vs. q/4 = 832", "Time t (s)", "Max |e_dec|", (t0, t1), (0.0, 1100.0), &[
                         PlotSeries { label: "Max |e_dec|", points: &n_pts, color: Color32::from_rgb(56, 189, 248) },
-                    ], &[PlotHThreshold { y: 832.0, label: "q/4 = 832 Failure Bound", color: Color32::from_rgb(251, 113, 133) }], 190.0);
+                    ], &[PlotHThreshold { y: 832.0, label: "q/4 = 832 Failure Bound", color: Color32::from_rgb(251, 113, 133) }], h_top);
                     let cloud: Vec<[f64; 2]> = self.arena.c3_lwe_cloud.iter().copied().collect();
-                    draw_lattice_2d_cloud(ui, &rep.lattice_2d_points, rep.lattice_basis_b1, rep.lattice_basis_b2, rep.lattice_2d_exact_target, &cloud, Vec2::new(ui.available_width().max(340.0), 220.0));
+                    draw_lattice_2d_cloud(ui, &rep.lattice_2d_points, rep.lattice_basis_b1, rep.lattice_basis_b2, rep.lattice_2d_exact_target, &cloud, Vec2::new(ui.available_width().max(340.0_f32), h_bot));
                 }
                 ModuleId::C4PqcSignatures => {
                     let max_c = self.arena.c4_raw_bins.iter().copied().max().unwrap_or(10).max(10) as f64 * 1.15;
                     let raw_pts: Vec<(f64, f64)> = self.arena.c4_raw_bins.iter().enumerate().map(|(i, &c)| (i as f64, c as f64)).collect();
                     let acc_pts: Vec<(f64, f64)> = self.arena.c4_acc_bins.iter().enumerate().map(|(i, &c)| (i as f64, c as f64)).collect();
-                    draw_scientific_plot(ui, "Accumulating FIPS 204 z = y + c*s: Raw Tails vs. Accepted Box", "Bin", "Count", (0.0, 20.0), (0.0, max_c), &[
+                    draw_scientific_plot(ui, "Accumulating FIPS 204 z = y + c*s: Raw Tails vs. Accepted Box", "Bin Index", "Count", (0.0, 20.0), (0.0, max_c), &[
                         PlotSeries { label: "Raw z = y + c*s", points: &raw_pts, color: Color32::from_rgb(251, 113, 133) },
                         PlotSeries { label: "Accepted Box", points: &acc_pts, color: Color32::from_rgb(52, 211, 153) },
-                    ], &[], 230.0);
+                    ], &[], avail.max(240.0_f32));
                 }
                 ModuleId::A1SurfaceCode => {
                     let d = self.ws.a1_code_distance;
+                    let grid_sz = (avail * 0.44_f32).clamp(210.0_f32, 340.0_f32);
+                    let h_bot = (avail - grid_sz - 38.0_f32).max(195.0_f32);
                     ui.horizontal(|ui| {
-                        draw_surface_code_grid(ui, d, &self.arena.a1_data_errors, 230.0);
+                        draw_surface_code_grid(ui, d, &self.arena.a1_data_errors, grid_sz);
                         ui.vertical(|ui| {
                             ui.monospace(format!("Physical Error p = {:.2}% (Threshold ~ 1.00%)", self.ws.a1_phys_error * 100.0));
                             ui.monospace(format!("d=3 Survival: {:.1}%", self.arena.a1_surv_d3 * 100.0));
@@ -592,11 +1028,11 @@ impl QuantaCryptApp {
                     let s3: Vec<(f64, f64)> = self.arena.a1_trace.iter().map(|&(t, a, _, _)| (t, a)).collect();
                     let s5: Vec<(f64, f64)> = self.arena.a1_trace.iter().map(|&(t, _, b, _)| (t, b)).collect();
                     let s7: Vec<(f64, f64)> = self.arena.a1_trace.iter().map(|&(t, _, _, c)| (t, c)).collect();
-                    draw_scientific_plot(ui, "Surface-Code Distance Scaling (Below p_th ~ 1%, d=7 Beats d=3; Above 1%, Crossover Reverses!)", "t", "Logical Survival", (t0, t1), (0.0, 1.05), &[
+                    draw_scientific_plot(ui, "Surface-Code Distance Scaling (Below p_th ~ 1%, d=7 Beats d=3; Above 1%, Crossover Reverses!)", "Time t (s)", "Logical Survival", (t0, t1), (0.0, 1.05), &[
                         PlotSeries { label: "d = 3", points: &s3, color: Color32::from_rgb(251, 191, 36) },
                         PlotSeries { label: "d = 5", points: &s5, color: Color32::from_rgb(56, 189, 248) },
                         PlotSeries { label: "d = 7", points: &s7, color: Color32::from_rgb(52, 211, 153) },
-                    ], &[], 195.0);
+                    ], &[], h_bot);
                 }
                 ModuleId::A2VqeHydrogen => {
                     let (fci, e_cur) = h2_fci_and_ansatz_energy(self.ws.a2_bond_r_angstrom, self.arena.a2_theta);
@@ -607,38 +1043,40 @@ impl QuantaCryptApp {
                     let t0 = self.arena.a2_energy_trace.front().map(|x| x.0).unwrap_or(0.0);
                     let t1 = (t0 + 0.1).max(self.arena.sim_time);
                     let v_pts: Vec<(f64, f64)> = self.arena.a2_energy_trace.iter().map(|&(t, ev, _)| (t, ev)).collect();
-                    draw_scientific_plot(ui, "Live Shot-Noise SPSA VQE Descent Toward Molecular H2 FCI Ground State (Ha)", "t", "Energy (Ha)", (t0, t1), (-1.20, -0.20), &[
+                    draw_scientific_plot(ui, "Live Shot-Noise SPSA VQE Descent Toward Molecular H2 FCI Ground State (Ha)", "Time t (s)", "Energy (Ha)", (t0, t1), (-1.20, -0.20), &[
                         PlotSeries { label: "VQE Ansatz E(t)", points: &v_pts, color: Color32::from_rgb(56, 189, 248) },
-                    ], &[PlotHThreshold { y: fci, label: "Exact STO-3G FCI Ground Energy", color: Color32::from_rgb(52, 211, 153) }], 225.0);
+                    ], &[PlotHThreshold { y: fci, label: "Exact STO-3G FCI Ground Energy", color: Color32::from_rgb(52, 211, 153) }], avail_sub.max(240.0_f32));
                 }
                 ModuleId::A3QaoaMaxCut => {
+                    let top_sz = (avail * 0.44_f32).clamp(210.0_f32, 330.0_f32);
+                    let h_bot = (avail - top_sz - 38.0_f32).max(195.0_f32);
                     ui.horizontal(|ui| {
-                        draw_qaoa_ring_graph(ui, self.arena.a3_last_mask, 220.0);
+                        draw_qaoa_ring_graph(ui, self.arena.a3_last_mask, top_sz);
                         let tot = self.arena.a3_cut_bins.iter().sum::<u64>().max(1) as f64;
                         let probs: Vec<f64> = self.arena.a3_cut_bins.iter().map(|&c| (c as f64) / tot).collect();
                         let labels: Vec<String> = (0..10).map(|c| format!("C={}", c)).collect();
-                        draw_amplitude_phase_bars(ui, &labels, &probs, None, 220.0, "Sampled Cut-Value Distribution (Max-Cut = 10)");
+                        draw_amplitude_phase_bars(ui, &labels, &probs, None, top_sz + 28.0_f32, "Sampled Cut-Value Distribution (Max-Cut = 10)");
                     });
                     let t0 = self.arena.a3_ratio_trace.front().map(|x| x.0).unwrap_or(0.0);
                     let t1 = (t0 + 0.1).max(self.arena.sim_time);
                     let r_pts: Vec<(f64, f64)> = self.arena.a3_ratio_trace.iter().copied().collect();
-                    draw_scientific_plot(ui, "Running QAOA Approximation Ratio <C> / C_max", "t", "Ratio", (t0, t1), (0.4, 1.02), &[
+                    draw_scientific_plot(ui, "Running QAOA Approximation Ratio <C> / C_max", "Time t (s)", "Ratio", (t0, t1), (0.4, 1.02), &[
                         PlotSeries { label: "<C> / C_max", points: &r_pts, color: Color32::from_rgb(52, 211, 153) },
-                    ], &[PlotHThreshold { y: 0.6924, label: "Goemans-Williamson / p=1 Reference 0.692", color: Color32::from_rgb(251, 191, 36) }], 185.0);
+                    ], &[PlotHThreshold { y: 0.6924, label: "Goemans-Williamson / p=1 Reference 0.692", color: Color32::from_rgb(251, 191, 36) }], h_bot);
                 }
                 ModuleId::A4MagicStateFactory => {
                     let p_in = self.ws.a4_raw_t_error;
                     let th_out = 35.0 * p_in.powi(3) * 100.0;
                     ui.monospace(format!(
-                        "15-Qubit Batches: {}  |  Purified |T⟩: {}  |  Syndrome Aborts: {}  |  Cubic 35*p_in^3 = {:.4}%",
+                        "15-Qubit Batches: {}  |  Purified |T>: {}  |  Syndrome Aborts: {}  |  Cubic 35*p_in^3 = {:.4}%",
                         self.arena.a4_batches, self.arena.a4_distilled_ok, self.arena.a4_aborted_blocks, th_out
                     ));
                     let t0 = self.arena.a4_err_trace.front().map(|x| x.0).unwrap_or(0.0);
                     let t1 = (t0 + 0.1).max(self.arena.sim_time);
                     let e_pts: Vec<(f64, f64)> = self.arena.a4_err_trace.iter().copied().collect();
-                    draw_scientific_plot(ui, "Distilled |T> Output Infidelity (%) vs. Raw Input Error p_in (%)", "t", "Error (%)", (t0, t1), (0.0, (p_in * 120.0).max(2.0)), &[
+                    draw_scientific_plot(ui, "Distilled |T> Output Infidelity (%) vs. Raw Input Error p_in (%)", "Time t (s)", "Error (%)", (t0, t1), (0.0, (p_in * 120.0).max(2.0)), &[
                         PlotSeries { label: "Distilled p_out (%)", points: &e_pts, color: Color32::from_rgb(52, 211, 153) },
-                    ], &[PlotHThreshold { y: p_in * 100.0, label: "Raw Unpurified Input p_in (%)", color: Color32::from_rgb(251, 113, 133) }], 225.0);
+                    ], &[PlotHThreshold { y: p_in * 100.0, label: "Raw Unpurified Input p_in (%)", color: Color32::from_rgb(251, 113, 133) }], avail_sub.max(240.0_f32));
                 }
                 ModuleId::Q5EntanglementSwapping => {
                     let rate = if self.arena.q5_trials > 0 {
@@ -650,13 +1088,15 @@ impl QuantaCryptApp {
                         "Repeater Hops: {}  |  Trials: {}  |  Heralded End-to-End Pairs: {} ({:.1}%)",
                         self.ws.q5_repeater_hops, self.arena.q5_trials, self.arena.q5_heralded, rate
                     ));
-                    draw_repeater_chain(ui, self.ws.q5_repeater_hops, &self.arena.q5_swap_flags, (self.arena.sim_time * 1.4) as f32, 175.0);
+                    let h_top = (avail_sub * 0.44_f32).max(175.0_f32);
+                    let h_bot = (avail_sub - h_top - 8.0_f32).max(205.0_f32);
+                    draw_repeater_chain(ui, self.ws.q5_repeater_hops, &self.arena.q5_swap_flags, (self.arena.sim_time * 1.4) as f32, h_top);
                     let t0 = self.arena.q5_fid_trace.front().map(|x| x.0).unwrap_or(0.0);
                     let t1 = (t0 + 0.1).max(self.arena.sim_time);
                     let f_pts: Vec<(f64, f64)> = self.arena.q5_fid_trace.iter().copied().collect();
-                    draw_scientific_plot(ui, "Heralded End-to-End Bell Fidelity F(t) vs. Entanglement Bound (0.50)", "t", "Fidelity", (t0, t1), (0.20, 1.05), &[
+                    draw_scientific_plot(ui, "Heralded End-to-End Bell Fidelity F(t) vs. Entanglement Bound (0.50)", "Time t (s)", "Fidelity", (t0, t1), (0.20, 1.05), &[
                         PlotSeries { label: "Swapped Bell Fidelity", points: &f_pts, color: Color32::from_rgb(52, 211, 153) },
-                    ], &[PlotHThreshold { y: 0.50, label: "Separability Witness 0.50", color: Color32::from_rgb(251, 113, 133) }], 205.0);
+                    ], &[PlotHThreshold { y: 0.50, label: "Separability Witness 0.50", color: Color32::from_rgb(251, 113, 133) }], h_bot);
                 }
                 ModuleId::D2QuditTeleportation => {
                     let d = self.ws.d2_dimension_d.clamp(2, 8);
@@ -671,19 +1111,21 @@ impl QuantaCryptApp {
                         "d = {} ({}^2 = {} Bell states)  |  Last (m,n) = {:?}  |  F_avg = {:.3} (Classical = {:.3}, (d-1)/d = {:.3})",
                         d, d, d * d, self.arena.d2_last_mn, emp_f, cls_lim, sub_lim
                     ));
+                    let h_top = (avail_sub * 0.48_f32).max(195.0_f32);
+                    let h_bot = (avail_sub - h_top - 8.0_f32).max(185.0_f32);
                     let tot = self.arena.d2_bob_counts.iter().sum::<u64>().max(1) as f64;
                     let probs: Vec<f64> = self.arena.d2_bob_counts.iter().map(|&c| (c as f64) / tot).collect();
-                    let labels: Vec<String> = (0..d).map(|k| format!("|{}⟩", k)).collect();
-                    draw_amplitude_phase_bars(ui, &labels, &probs, None, 195.0, "Bob Reconstructed d-Mode Intensity Profile After Weyl Z_d^m X_d^n");
+                    let labels: Vec<String> = (0..d).map(|k| format!("|{}>", k)).collect();
+                    draw_amplitude_phase_bars(ui, &labels, &probs, None, h_top, "Bob Reconstructed d-Mode Intensity Profile After Weyl Z_d^m X_d^n");
                     let t0 = self.arena.d2_fid_trace.front().map(|x| x.0).unwrap_or(0.0);
                     let t1 = (t0 + 0.1).max(self.arena.sim_time);
                     let f_pts: Vec<(f64, f64)> = self.arena.d2_fid_trace.iter().copied().collect();
-                    draw_scientific_plot(ui, "Average d-Dimensional Teleportation Fidelity vs. Dimensionality Witnesses", "t", "F_avg", (t0, t1), (0.0, 1.05), &[
+                    draw_scientific_plot(ui, "Average d-Dimensional Teleportation Fidelity vs. Dimensionality Witnesses", "Time t (s)", "F_avg", (t0, t1), (0.0, 1.05), &[
                         PlotSeries { label: "Empirical F_avg(t)", points: &f_pts, color: Color32::from_rgb(56, 189, 248) },
                     ], &[
                         PlotHThreshold { y: sub_lim, label: "(d-1)-Dim Subspace Bound", color: Color32::from_rgb(251, 191, 36) },
                         PlotHThreshold { y: cls_lim, label: "Classical 2/(d+1) Bound", color: Color32::from_rgb(251, 113, 133) },
-                    ], 185.0);
+                    ], h_bot);
                 }
                 ModuleId::A5GateTeleportation => {
                     let target_phi = (self.ws.a5_chain_depth as f64) * (PI * 0.25);
@@ -709,16 +1151,18 @@ impl QuantaCryptApp {
                         self.ws.a5_chain_depth,
                         self.arena.a5_total_gadgets,
                         fix_pct,
-                        if self.ws.a5_use_distilled { "A4 15-to-1 Distilled |T⟩" } else { "Raw Unpurified |T⟩" }
+                        if self.ws.a5_use_distilled { "A4 15-to-1 Distilled |T>" } else { "Raw Unpurified |T>" }
                     ));
-                    draw_bloch_sphere_cloud(ui, Vec2::new(ui.available_width().min(400.0), 255.0), mean, Some((target_vec, "Ideal T^N|+⟩")), &cloud, &mut self.bloch_yaw, &mut self.bloch_pitch, "Teleported T^N Bloch Equator Cloud vs. Ideal Octant");
+                    let h_top = (avail_sub * 0.54_f32).max(255.0_f32);
+                    let h_bot = (avail_sub - h_top - 8.0_f32).max(180.0_f32);
+                    draw_bloch_sphere_cloud(ui, Vec2::new(ui.available_width().min(h_top * 1.4_f32), h_top), mean, Some((target_vec, "Ideal T^N|+>")), &cloud, &mut self.bloch_yaw, &mut self.bloch_pitch, "Teleported T^N Bloch Equator Cloud vs. Ideal Octant");
                     let t0 = self.arena.a5_fid_trace.front().map(|x| x.0).unwrap_or(0.0);
                     let t1 = (t0 + 0.1).max(self.arena.sim_time);
                     let act_pts: Vec<(f64, f64)> = self.arena.a5_fid_trace.iter().map(|&(t, f, _)| (t, f)).collect();
                     let raw_ref = self.arena.a5_fid_trace.back().map(|x| x.2).unwrap_or(0.8);
-                    draw_scientific_plot(ui, "Chained Gate-Teleportation Sequence Fidelity F(T^N)", "t", "Fidelity", (t0, t1), (0.35, 1.05), &[
+                    draw_scientific_plot(ui, "Chained Gate-Teleportation Sequence Fidelity F(T^N)", "Time t (s)", "Fidelity", (t0, t1), (0.35, 1.05), &[
                         PlotSeries { label: "Teleported T^N Fidelity", points: &act_pts, color: Color32::from_rgb(52, 211, 153) },
-                    ], &[PlotHThreshold { y: raw_ref, label: "Unpurified Raw |T> Baseline", color: Color32::from_rgb(251, 113, 133) }], 180.0);
+                    ], &[PlotHThreshold { y: raw_ref, label: "Unpurified Raw |T> Baseline", color: Color32::from_rgb(251, 113, 133) }], h_bot);
                 }
             }
         });
@@ -727,29 +1171,213 @@ impl QuantaCryptApp {
     fn render_modals(&mut self, ctx: &egui::Context) {
         if self.show_workset_modal {
             let mut open = self.show_workset_modal;
-            egui::Window::new("Preset Slots (SQLite WAL) & Portable JSON").open(&mut open).resizable(true).default_width(500.0).show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Slot:");
-                    ui.text_edit_singleline(&mut self.slot_name_input);
-                    if ui.button("Save").clicked() {
-                        if let Some(repo) = &self.repo { let _ = repo.save_slot(self.slot_name_input.trim(), &self.ws); }
+            egui::Window::new("Preset Slots (SQLite WAL) & Portable JSON")
+                .open(&mut open)
+                .resizable(true)
+                .default_width(540.0_f32)
+                .show(ctx, |ui| {
+                    ui.label(RichText::new("SQLite WAL Workset Slots").strong());
+                    if self.repo.is_none() {
+                        ui.colored_label(
+                            Color32::from_rgb(251, 191, 36),
+                            "SQLite repository unavailable; only portable JSON export/import is active.",
+                        );
                     }
-                });
-                ui.horizontal(|ui| {
-                    ui.text_edit_singleline(&mut self.json_path_input);
-                    if ui.button("Export JSON").clicked() {
-                        let p = PathBuf::from(self.json_path_input.trim());
-                        let _ = PortableWorksetEnvelope::pack("preset", &self.ws).and_then(|e| e.save_to_path(&p));
+                    ui.horizontal(|ui| {
+                        ui.label("Slot:");
+                        ui.text_edit_singleline(&mut self.slot_name_input);
+                        if ui.button("Save Slot").clicked() {
+                            let name = self.slot_name_input.trim().to_string();
+                            if name.is_empty() {
+                                let msg = "Slot name cannot be empty.".to_string();
+                                self.status_banner = msg.clone();
+                                self.modal_feedback = Some(msg);
+                            } else if let Some(repo) = &self.repo {
+                                match repo.save_slot(&name, &self.ws) {
+                                    Ok(hash) => {
+                                        let msg = format!("Saved SQLite slot '{}' (SHA-256: {}...)", name, &hash[..12]);
+                                        self.status_banner = msg.clone();
+                                        self.modal_feedback = Some(msg);
+                                        self.refresh_slot_list();
+                                    }
+                                    Err(e) => {
+                                        let msg = format!("SQLite save failed: {}", e);
+                                        self.status_banner = msg.clone();
+                                        self.modal_feedback = Some(msg);
+                                    }
+                                }
+                            } else {
+                                let msg = "SQLite repository is not open.".to_string();
+                                self.status_banner = msg.clone();
+                                self.modal_feedback = Some(msg);
+                            }
+                        }
+                        if ui.button("Refresh").clicked() {
+                            self.refresh_slot_list();
+                        }
+                    });
+
+                    ui.add_space(4.0_f32);
+                    let slots = self.slot_list_cache.clone();
+                    let mut action_load: Option<String> = None;
+                    let mut action_delete: Option<String> = None;
+                    if slots.is_empty() {
+                        ui.label(RichText::new("No saved SQLite slots yet.").weak());
+                    } else {
+                        ScrollArea::vertical().id_salt("sqlite_slots_scroll").max_height(160.0_f32).show(ui, |ui| {
+                            egui::Grid::new("sqlite_slots_grid").striped(true).num_columns(5).show(ui, |ui| {
+                                ui.label(RichText::new("Slot").strong());
+                                ui.label(RichText::new("Module").strong());
+                                ui.label(RichText::new("Mastered").strong());
+                                ui.label("");
+                                ui.label("");
+                                ui.end_row();
+                                for s in &slots {
+                                    ui.monospace(&s.slot_name);
+                                    ui.monospace(&s.active_module);
+                                    ui.monospace(format!("{}", s.mastered_count));
+                                    if ui.small_button("Load").clicked() {
+                                        action_load = Some(s.slot_name.clone());
+                                    }
+                                    if ui.small_button("Delete").clicked() {
+                                        action_delete = Some(s.slot_name.clone());
+                                    }
+                                    ui.end_row();
+                                }
+                            });
+                        });
                     }
-                    if ui.button("Import JSON").clicked() {
-                        let p = PathBuf::from(self.json_path_input.trim());
-                        if let Ok((_, st)) = PortableWorksetEnvelope::load_from_path(&p) {
-                            self.ws = st;
-                            self.arena.reset_stream(self.ws.seed, self.ws.active_module);
+                    if let Some(name) = action_load {
+                        if let Some(repo) = &self.repo {
+                            match repo.load_slot(&name) {
+                                Ok(loaded) => {
+                                    self.ws = loaded;
+                                    self.sync_q2_indices();
+                                    self.arena.reset_stream(self.ws.seed, self.ws.active_module);
+                                    let msg = format!("Loaded SQLite slot '{}'.", name);
+                                    self.status_banner = msg.clone();
+                                    self.modal_feedback = Some(msg);
+                                }
+                                Err(e) => {
+                                    let msg = format!("Failed loading slot '{}': {}", name, e);
+                                    self.status_banner = msg.clone();
+                                    self.modal_feedback = Some(msg);
+                                }
+                            }
                         }
                     }
+                    if let Some(name) = action_delete {
+                        if let Some(repo) = &self.repo {
+                            match repo.delete_slot(&name) {
+                                Ok(true) => {
+                                    let msg = format!("Deleted SQLite slot '{}'.", name);
+                                    self.status_banner = msg.clone();
+                                    self.modal_feedback = Some(msg);
+                                    self.refresh_slot_list();
+                                }
+                                Ok(false) => {
+                                    let msg = format!("Slot '{}' was not found.", name);
+                                    self.status_banner = msg.clone();
+                                    self.modal_feedback = Some(msg);
+                                }
+                                Err(e) => {
+                                    let msg = format!("Failed deleting slot '{}': {}", name, e);
+                                    self.status_banner = msg.clone();
+                                    self.modal_feedback = Some(msg);
+                                }
+                            }
+                        }
+                    }
+
+                    ui.separator();
+                    ui.label(RichText::new("Portable Workset JSON (.qworkset.json)").strong());
+                    ui.horizontal(|ui| {
+                        if ui.button("Export JSON...").clicked() {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("QuantaCrypt Workset", &["qworkset.json", "json"])
+                                .set_file_name("session_alpha.qworkset.json")
+                                .save_file()
+                            {
+                                self.json_path_input = path.display().to_string();
+                                match PortableWorksetEnvelope::pack("preset", &self.ws).and_then(|e| e.save_to_path(&path)) {
+                                    Ok(()) => {
+                                        let msg = format!("Exported workset to {}", path.display());
+                                        self.status_banner = msg.clone();
+                                        self.modal_feedback = Some(msg);
+                                    }
+                                    Err(e) => {
+                                        let msg = format!("JSON export error: {}", e);
+                                        self.status_banner = msg.clone();
+                                        self.modal_feedback = Some(msg);
+                                    }
+                                }
+                            }
+                        }
+                        if ui.button("Import JSON...").clicked() {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("QuantaCrypt Workset", &["qworkset.json", "json"])
+                                .pick_file()
+                            {
+                                self.json_path_input = path.display().to_string();
+                                match PortableWorksetEnvelope::load_from_path(&path) {
+                                    Ok((lbl, st)) => {
+                                        self.ws = st;
+                                        self.sync_q2_indices();
+                                        self.arena.reset_stream(self.ws.seed, self.ws.active_module);
+                                        let msg = format!("Imported workset '{}' from {}", lbl, path.display());
+                                        self.status_banner = msg.clone();
+                                        self.modal_feedback = Some(msg);
+                                    }
+                                    Err(e) => {
+                                        let msg = format!("JSON import error: {}", e);
+                                        self.status_banner = msg.clone();
+                                        self.modal_feedback = Some(msg);
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.text_edit_singleline(&mut self.json_path_input);
+                        if ui.button("Save Path").clicked() {
+                            let p = PathBuf::from(self.json_path_input.trim());
+                            match PortableWorksetEnvelope::pack("preset", &self.ws).and_then(|e| e.save_to_path(&p)) {
+                                Ok(()) => {
+                                    let msg = format!("Saved JSON workset to {}", p.display());
+                                    self.status_banner = msg.clone();
+                                    self.modal_feedback = Some(msg);
+                                }
+                                Err(e) => {
+                                    let msg = format!("JSON save error: {}", e);
+                                    self.status_banner = msg.clone();
+                                    self.modal_feedback = Some(msg);
+                                }
+                            }
+                        }
+                        if ui.button("Load Path").clicked() {
+                            let p = PathBuf::from(self.json_path_input.trim());
+                            match PortableWorksetEnvelope::load_from_path(&p) {
+                                Ok((lbl, st)) => {
+                                    self.ws = st;
+                                    self.sync_q2_indices();
+                                    self.arena.reset_stream(self.ws.seed, self.ws.active_module);
+                                    let msg = format!("Loaded JSON workset '{}' from {}", lbl, p.display());
+                                    self.status_banner = msg.clone();
+                                    self.modal_feedback = Some(msg);
+                                }
+                                Err(e) => {
+                                    let msg = format!("JSON load error: {}", e);
+                                    self.status_banner = msg.clone();
+                                    self.modal_feedback = Some(msg);
+                                }
+                            }
+                        }
+                    });
+                    if let Some(fb) = &self.modal_feedback {
+                        ui.separator();
+                        ui.monospace(fb);
+                    }
                 });
-            });
             self.show_workset_modal = open;
         }
         if self.show_help_modal {
@@ -766,16 +1394,37 @@ impl QuantaCryptApp {
             });
             self.show_help_modal = open;
         }
+        if self.show_about_modal {
+            let mut open = self.show_about_modal;
+            egui::Window::new("About QuantaCrypt Studio")
+                .open(&mut open)
+                .resizable(false)
+                .collapsible(false)
+                .default_width(440.0_f32)
+                .show(ctx, |ui| {
+                    ui.heading(format!("QuantaCrypt Studio v{}", env!("CARGO_PKG_VERSION")));
+                    ui.label("Native safe-Rust 23-module passive stochastic quantum simulation, OpenQASM 2.0 circuit & density-matrix explorer, QKD, and post-quantum cryptography workstation.");
+                    ui.separator();
+                    ui.label(RichText::new("Copyright CRV Science Network").strong());
+                    ui.label("Licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later).");
+                    ui.separator();
+                    ui.hyperlink_to("CRV Science Network (https://crvscience.com)", "https://crvscience.com");
+                    ui.hyperlink_to("CRV Science Apps Hub (https://crvscience.com/apps)", "https://crvscience.com/apps");
+                });
+            self.show_about_modal = open;
+        }
     }
 
     pub fn ui_step(&mut self, ctx: &egui::Context) {
         ctx.set_visuals(egui::Visuals::dark());
-        if ctx.input(|i| i.key_pressed(egui::Key::Space)) { self.arena.playing = !self.arena.playing; }
-        if ctx.input(|i| i.key_pressed(egui::Key::R)) { self.arena.reset_stream(self.ws.seed, self.ws.active_module); }
+        if !ctx.wants_keyboard_input() {
+            if ctx.input(|i| i.key_pressed(egui::Key::Space)) { self.arena.playing = !self.arena.playing; }
+            if ctx.input(|i| i.key_pressed(egui::Key::R)) { self.arena.reset_stream(self.ws.seed, self.ws.active_module); }
+            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) { self.stage = AppStage::CurriculumHub; }
+        }
         if ctx.input(|i| i.key_pressed(egui::Key::F1)) { self.show_help_modal = !self.show_help_modal; }
         if ctx.input(|i| i.key_pressed(egui::Key::F5)) { self.quick_save(); }
         if ctx.input(|i| i.key_pressed(egui::Key::F9)) { self.quick_load(); }
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) { self.stage = AppStage::CurriculumHub; }
 
         let dt = ctx.input(|i| i.unstable_dt) as f64;
         if self.stage == AppStage::ModuleWorkspace {
@@ -783,7 +1432,18 @@ impl QuantaCryptApp {
             if self.arena.playing { ctx.request_repaint(); }
         }
         self.render_top_menu(ctx);
-        egui::TopBottomPanel::bottom("quantacrypt_statusbar").show(ctx, |ui| { ui.monospace(&self.status_banner); });
+        egui::TopBottomPanel::bottom("quantacrypt_statusbar").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.monospace(&self.status_banner);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.small_button("About").clicked() {
+                        self.show_about_modal = true;
+                    }
+                    ui.separator();
+                    ui.label(RichText::new("Copyright CRV Science Network").small().color(Color32::from_rgb(148, 164, 186)));
+                });
+            });
+        });
         match self.stage {
             AppStage::CurriculumHub => { egui::CentralPanel::default().show(ctx, |ui| { self.render_hub(ui); }); }
             AppStage::ModuleWorkspace => {
@@ -837,6 +1497,7 @@ fn write_rgba_png(
     let mut encoder = png::Encoder::new(w, width, height);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
+    encoder.set_compression(png::Compression::Balanced);
     let mut writer = encoder.write_header()?;
     writer.write_image_data(rgba)?;
     Ok(())
@@ -912,6 +1573,9 @@ pub fn render_headless_screenshot(
             app.ws.active_module = ModuleId::Q2CircuitEntanglement;
             app.ws.q2_circuit = QuantumCircuit::preset_ghz(4);
             app.ws.q2_step_cursor = app.ws.q2_circuit.ops.len();
+            app.ws.q2_bipartite_cut = 2;
+            app.ws.q2_qasm_buffer = app.ws.q2_circuit.to_openqasm();
+            app.sync_q2_indices();
             app.arena.reset_stream(app.ws.seed, ModuleId::Q2CircuitEntanglement);
         }
         _ => {

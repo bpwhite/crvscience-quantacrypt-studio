@@ -39,6 +39,62 @@ pub struct FlyingPhoton {
     pub erased: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Bb84TapeEntry {
+    pub pulse_index: u64,
+    pub alice_bit: u8,
+    pub alice_basis: char,
+    pub eve_intercepted: bool,
+    pub eve_basis: char,
+    pub bob_basis: char,
+    pub bob_bit: u8,
+    pub sifted_keep: bool,
+    pub bit_error: bool,
+}
+
+/// Exact partially coherent Young double-slit intensity profile `I(x)` on `x in [-1.0, 1.0]`
+/// matching the two-Gaussian slit envelope (`sigma = 0.42`, centers `+/-0.18`) and visibility `1 - which_path`.
+pub fn double_slit_intensity(x: f64, slit_sep: f64, which_path: f64) -> f64 {
+    let vis = (1.0 - which_path.clamp(0.0, 1.0)).max(0.0);
+    let sep = slit_sep.clamp(1.5, 9.0);
+    let env1 = (-((x - 0.18) / 0.42).powi(2)).exp();
+    let env2 = (-((x + 0.18) / 0.42).powi(2)).exp();
+    0.5 * (env1 + env2 + 2.0 * vis * (env1 * env2).sqrt() * (PI * sep * x).cos())
+}
+
+/// Normalized analytical bin probabilities over `num_bins` uniform intervals in `[-1.0, 1.0]`.
+pub fn double_slit_analytical_bin_probs(
+    slit_sep: f64,
+    which_path: f64,
+    num_bins: usize,
+) -> Vec<f64> {
+    if num_bins == 0 {
+        return Vec::new();
+    }
+    let dx = 2.0 / (num_bins as f64);
+    let sub_steps = 8_usize;
+    let sub_dx = dx / (sub_steps as f64);
+    let mut probs = Vec::with_capacity(num_bins);
+    let mut total = 0.0_f64;
+    for i in 0..num_bins {
+        let bin_left = -1.0 + (i as f64) * dx;
+        let mut acc = 0.0_f64;
+        for s in 0..sub_steps {
+            let x = bin_left + ((s as f64) + 0.5) * sub_dx;
+            acc += double_slit_intensity(x, slit_sep, which_path).max(0.0);
+        }
+        let val = acc / (sub_steps as f64);
+        total += val;
+        probs.push(val);
+    }
+    if total > 0.0 {
+        for p in &mut probs {
+            *p /= total;
+        }
+    }
+    probs
+}
+
 /// Exact STO-3G 2-qubit parity-mapped Hydrogen `H2` ground-state reference energy (in Hartree)
 /// across internuclear bond length `R` (`0.3..=2.4` Angstrom) + variational ansatz `E(R, theta)`.
 pub fn h2_fci_and_ansatz_energy(r_angstrom: f64, theta: f64) -> (f64, f64) {
@@ -100,7 +156,7 @@ pub struct StochasticArena {
     pub k1_sifted_total: u64,
     pub k1_sifted_errors: u64,
     pub k1_qber_trace: VecDeque<(f64, f64)>,
-    pub k1_bit_tape: VecDeque<(u8, u8, bool)>,
+    pub k1_bit_tape: VecDeque<Bb84TapeEntry>,
     pub k2_corr_sum: [[f64; 3]; 3],
     pub k2_corr_cnt: [[u64; 3]; 3],
     pub k2_chsh_trace: VecDeque<(f64, f64)>,
@@ -363,18 +419,13 @@ impl StochasticArena {
 
         match ws.active_module {
             ModuleId::I1DoubleSlit => {
-                let vis = (1.0 - ws.i1_which_path.clamp(0.0, 1.0)).max(0.0);
-                let sep = ws.i1_slit_sep.clamp(1.5, 9.0);
                 self.accum_events += dt * 55.0;
                 while self.accum_events >= 1.0 {
                     self.accum_events -= 1.0;
                     // Rejection-sample exact partially coherent double-slit intensity I(x) on [-1, 1]
                     for _ in 0..16 {
                         let x = 2.0 * self.rng.next_f64() - 1.0;
-                        let env1 = (-((x - 0.18) / 0.42).powi(2)).exp();
-                        let env2 = (-((x + 0.18) / 0.42).powi(2)).exp();
-                        let interference = 0.5
-                            * (env1 + env2 + 2.0 * vis * (env1 * env2).sqrt() * (PI * sep * x).cos());
+                        let interference = double_slit_intensity(x, ws.i1_slit_sep, ws.i1_which_path);
                         if self.rng.next_f64() * 1.95 <= interference {
                             let y = self.rng.next_f64() as f32;
                             let xn = ((x + 1.0) * 0.5).clamp(0.0, 0.9999);
@@ -692,11 +743,22 @@ impl StochasticArena {
                     }
                     let keep = a_bas == b_bas;
                     let err = keep && (a_bit != b_bit);
+                    let basis_char = |b: u8| if b == 0 { '+' } else { 'x' };
                     if keep {
                         self.k1_sifted_total += 1;
                         if err { self.k1_sifted_errors += 1; }
                         if self.k1_bit_tape.len() >= 28 { self.k1_bit_tape.pop_front(); }
-                        self.k1_bit_tape.push_back((a_bit, b_bit, err));
+                        self.k1_bit_tape.push_back(Bb84TapeEntry {
+                            pulse_index: self.total_events,
+                            alice_bit: a_bit,
+                            alice_basis: basis_char(a_bas),
+                            eve_intercepted: eve_int,
+                            eve_basis: if eve_int { basis_char(e_bas) } else { '-' },
+                            bob_basis: basis_char(b_bas),
+                            bob_bit: b_bit,
+                            sifted_keep: true,
+                            bit_error: err,
+                        });
                     }
                     self.qkd_photons.push(FlyingPhoton {
                         x_frac: 0.0, lane: a_bas as usize, bit: a_bit, basis: b_bas,

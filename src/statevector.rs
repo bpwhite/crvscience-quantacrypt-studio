@@ -24,6 +24,7 @@ use std::f64::consts::{FRAC_1_SQRT_2, PI};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum GateOp {
+    Id(usize),
     H(usize),
     X(usize),
     Y(usize),
@@ -47,6 +48,7 @@ pub enum GateOp {
 impl GateOp {
     pub fn label(&self) -> String {
         match self {
+            Self::Id(_) => "I".to_string(),
             Self::H(_) => "H".to_string(),
             Self::X(_) => "X".to_string(),
             Self::Y(_) => "Y".to_string(),
@@ -70,7 +72,8 @@ impl GateOp {
 
     pub fn max_qubit_index(&self) -> usize {
         match *self {
-            Self::H(q)
+            Self::Id(q)
+            | Self::H(q)
             | Self::X(q)
             | Self::Y(q)
             | Self::Z(q)
@@ -155,6 +158,7 @@ impl QuantumCircuit {
         out.push_str(&format!("creg c[{}];\n\n", self.num_qubits));
         for op in &self.ops {
             let line = match *op {
+                GateOp::Id(q) => format!("id q[{}];", q),
                 GateOp::H(q) => format!("h q[{}];", q),
                 GateOp::X(q) => format!("x q[{}];", q),
                 GateOp::Y(q) => format!("y q[{}];", q),
@@ -250,6 +254,7 @@ impl QuantumCircuit {
                 };
 
                 let op = match (gname.as_str(), param_opt, qargs.as_slice()) {
+                    ("id", None, &[q]) => GateOp::Id(q),
                     ("h", None, &[q]) => GateOp::H(q),
                     ("x", None, &[q]) => GateOp::X(q),
                     ("y", None, &[q]) => GateOp::Y(q),
@@ -262,25 +267,65 @@ impl QuantumCircuit {
                     ("ry", Some(theta), &[q]) => GateOp::Ry { target: q, theta },
                     ("rz", Some(theta), &[q]) => GateOp::Rz { target: q, theta },
                     ("p" | "u1", Some(lambda), &[q]) => GateOp::Phase { target: q, lambda },
-                    ("cx" | "cnot", None, &[c, t]) => GateOp::Cnot {
-                        control: c,
-                        target: t,
-                    },
-                    ("cz", None, &[c, t]) => GateOp::Cz {
-                        control: c,
-                        target: t,
-                    },
-                    ("cp" | "cu1", Some(lambda), &[c, t]) => GateOp::CPhase {
-                        control: c,
-                        target: t,
-                        lambda,
-                    },
-                    ("swap", None, &[a, b]) => GateOp::Swap(a, b),
-                    ("ccx" | "toffoli", None, &[c1, c2, t]) => GateOp::Toffoli {
-                        c1,
-                        c2,
-                        target: t,
-                    },
+                    ("cx" | "cnot", None, &[c, t]) => {
+                        if c == t {
+                            return Err(format!(
+                                "Line {}: multi-qubit gate '{}' requires distinct control and target (got q[{}])",
+                                line_no, gname, c
+                            ));
+                        }
+                        GateOp::Cnot {
+                            control: c,
+                            target: t,
+                        }
+                    }
+                    ("cz", None, &[c, t]) => {
+                        if c == t {
+                            return Err(format!(
+                                "Line {}: multi-qubit gate '{}' requires distinct control and target (got q[{}])",
+                                line_no, gname, c
+                            ));
+                        }
+                        GateOp::Cz {
+                            control: c,
+                            target: t,
+                        }
+                    }
+                    ("cp" | "cu1", Some(lambda), &[c, t]) => {
+                        if c == t {
+                            return Err(format!(
+                                "Line {}: multi-qubit gate '{}' requires distinct control and target (got q[{}])",
+                                line_no, gname, c
+                            ));
+                        }
+                        GateOp::CPhase {
+                            control: c,
+                            target: t,
+                            lambda,
+                        }
+                    }
+                    ("swap", None, &[a, b]) => {
+                        if a == b {
+                            return Err(format!(
+                                "Line {}: swap gate requires distinct qubits (got q[{}])",
+                                line_no, a
+                            ));
+                        }
+                        GateOp::Swap(a, b)
+                    }
+                    ("ccx" | "toffoli", None, &[c1, c2, t]) => {
+                        if c1 == c2 || c1 == t || c2 == t {
+                            return Err(format!(
+                                "Line {}: Toffoli gate '{}' requires three distinct qubits (got q[{}], q[{}], q[{}])",
+                                line_no, gname, c1, c2, t
+                            ));
+                        }
+                        GateOp::Toffoli {
+                            c1,
+                            c2,
+                            target: t,
+                        }
+                    }
                     _ => {
                         return Err(format!(
                             "Line {}: unsupported gate or arity '{}'",
@@ -292,13 +337,19 @@ impl QuantumCircuit {
             }
         }
 
-        let inferred = ops
-            .iter()
-            .map(GateOp::max_qubit_index)
-            .max()
-            .map(|m| m + 1)
-            .unwrap_or(2);
-        let final_n = num_qubits.unwrap_or(inferred).max(inferred);
+        let max_qubit = ops.iter().map(GateOp::max_qubit_index).max();
+        if let Some(declared_n) = num_qubits {
+            if let Some(m_idx) = max_qubit {
+                if m_idx >= declared_n {
+                    return Err(format!(
+                        "Qubit index q[{}] exceeds declared qreg q[{}]",
+                        m_idx, declared_n
+                    ));
+                }
+            }
+        }
+        let inferred = max_qubit.map(|m| m.saturating_add(1)).unwrap_or(2);
+        let final_n = num_qubits.unwrap_or(inferred);
         if final_n > 12 {
             return Err(format!("Circuit requires {} qubits (maximum supported is 12)", final_n));
         }
@@ -310,7 +361,7 @@ impl QuantumCircuit {
 }
 
 fn split_gate_and_args(stmt: &str) -> Option<(&str, &str)> {
-    if let Some(close_paren) = stmt.find(')') {
+    if let Some(close_paren) = stmt.rfind(')') {
         let rest = stmt[close_paren + 1..].trim();
         if rest.is_empty() {
             None
@@ -341,45 +392,145 @@ fn parse_bracket_index(token: &str) -> Result<usize, String> {
         .map_err(|_| format!("non-integer index in '{}'", token))
 }
 
+struct AngleParser<'a> {
+    bytes: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> AngleParser<'a> {
+    fn new(src: &'a str) -> Self {
+        Self {
+            bytes: src.as_bytes(),
+            pos: 0,
+        }
+    }
+
+    fn peek(&self) -> Option<u8> {
+        self.bytes.get(self.pos).copied()
+    }
+
+    fn parse_expr(&mut self) -> Result<f64, String> {
+        let mut lhs = self.parse_term()?;
+        while let Some(op) = self.peek() {
+            if op == b'+' || op == b'-' {
+                self.pos += 1;
+                let rhs = self.parse_term()?;
+                lhs = if op == b'+' { lhs + rhs } else { lhs - rhs };
+                if !lhs.is_finite() {
+                    return Err("non-finite angle expression".to_string());
+                }
+            } else {
+                break;
+            }
+        }
+        Ok(lhs)
+    }
+
+    fn parse_term(&mut self) -> Result<f64, String> {
+        let mut lhs = self.parse_factor()?;
+        while let Some(op) = self.peek() {
+            if op == b'*' || op == b'/' {
+                self.pos += 1;
+                let rhs = self.parse_factor()?;
+                if op == b'*' {
+                    lhs *= rhs;
+                } else {
+                    if rhs.abs() < 1e-15 {
+                        return Err("division by zero in angle".to_string());
+                    }
+                    lhs /= rhs;
+                }
+                if !lhs.is_finite() {
+                    return Err("non-finite angle expression".to_string());
+                }
+            } else {
+                break;
+            }
+        }
+        Ok(lhs)
+    }
+
+    fn parse_factor(&mut self) -> Result<f64, String> {
+        match self.peek() {
+            Some(b'+') => {
+                self.pos += 1;
+                self.parse_factor()
+            }
+            Some(b'-') => {
+                self.pos += 1;
+                Ok(-self.parse_factor()?)
+            }
+            Some(b'(') => {
+                self.pos += 1;
+                let val = self.parse_expr()?;
+                if self.peek() != Some(b')') {
+                    return Err("unclosed '(' in angle expression".to_string());
+                }
+                self.pos += 1;
+                Ok(val)
+            }
+            Some(_) => self.parse_atom(),
+            None => Err("unexpected end of angle expression".to_string()),
+        }
+    }
+
+    fn parse_atom(&mut self) -> Result<f64, String> {
+        let start = self.pos;
+        if self.bytes[start..].len() >= 2
+            && self.bytes[start..start + 2].eq_ignore_ascii_case(b"pi")
+            && !self
+                .bytes
+                .get(start + 2)
+                .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_')
+        {
+            self.pos += 2;
+            return Ok(PI);
+        }
+        while let Some(c) = self.peek() {
+            if c.is_ascii_digit() || c == b'.' {
+                self.pos += 1;
+            } else if (c == b'e' || c == b'E') && self.pos > start {
+                self.pos += 1;
+                if matches!(self.peek(), Some(b'+' | b'-')) {
+                    self.pos += 1;
+                }
+            } else {
+                break;
+            }
+        }
+        if self.pos == start {
+            let tok = std::str::from_utf8(&self.bytes[start..]).unwrap_or("");
+            return Err(format!("cannot parse '{}'", tok));
+        }
+        let tok = std::str::from_utf8(&self.bytes[start..self.pos])
+            .map_err(|_| "invalid UTF-8 in angle".to_string())?;
+        let val = tok
+            .parse::<f64>()
+            .map_err(|_| format!("cannot parse '{}'", tok))?;
+        if !val.is_finite() {
+            return Err(format!("non-finite numeric literal '{}'", tok));
+        }
+        Ok(val)
+    }
+}
+
 fn eval_angle_expr(expr: &str) -> Result<f64, String> {
-    let cleaned = expr.replace(' ', "");
+    let cleaned: String = expr.chars().filter(|c| !c.is_whitespace()).collect();
     if cleaned.is_empty() {
         return Err("empty angle expression".to_string());
     }
-    let (sign, body) = if let Some(rest) = cleaned.strip_prefix('-') {
-        (-1.0, rest)
-    } else if let Some(rest) = cleaned.strip_prefix('+') {
-        (1.0, rest)
-    } else {
-        (1.0, cleaned.as_str())
-    };
-
-    // Support `a*pi/b`, `pi/b`, `a*pi`, `pi`, or plain floating-point literal
-    let parse_atom = |tok: &str| -> Result<f64, String> {
-        if tok.eq_ignore_ascii_case("pi") {
-            Ok(PI)
-        } else {
-            tok.parse::<f64>()
-                .map_err(|_| format!("cannot parse '{}'", tok))
-        }
-    };
-
-    let mut acc = 1.0_f64;
-    for (idx, div_chunk) in body.split('/').enumerate() {
-        let mut prod = 1.0_f64;
-        for mul_tok in div_chunk.split('*') {
-            prod *= parse_atom(mul_tok)?;
-        }
-        if idx == 0 {
-            acc = prod;
-        } else {
-            if prod.abs() < 1e-15 {
-                return Err("division by zero in angle".to_string());
-            }
-            acc /= prod;
-        }
+    let mut parser = AngleParser::new(&cleaned);
+    let val = parser.parse_expr()?;
+    if parser.pos != cleaned.len() {
+        return Err(format!(
+            "unexpected trailing '{}' in angle expression",
+            &cleaned[parser.pos..]
+        ));
     }
-    Ok(sign * acc)
+    if !val.is_finite() {
+        return Err("non-finite angle expression".to_string());
+    }
+    Ok(val)
 }
 
 /// Pure n-qubit statevector `|psi>` of length `2^n` (qubit `0` = least significant bit `1 << 0`).
@@ -429,6 +580,9 @@ impl Statevector {
     pub fn apply_op(&mut self, op: &GateOp, rng: &mut DeterministicRng) {
         let s = FRAC_1_SQRT_2;
         match *op {
+            GateOp::Id(q) => {
+                assert!(q < self.num_qubits);
+            }
             GateOp::H(q) => self.apply_single_qubit_matrix(
                 q,
                 [
@@ -711,6 +865,22 @@ impl Statevector {
             return 0.0;
         }
         self.reduced_subsystem_rho(split_k).von_neumann_entropy_bits()
+    }
+
+    /// Full pure-state density matrix `|psi><psi|` for up to 4 qubits (`dim <= 16`).
+    pub fn full_density_matrix(&self) -> Option<CMatrix> {
+        if self.num_qubits > 4 {
+            return None;
+        }
+        let d = self.dim();
+        let mut rho = CMatrix::zeros(d);
+        for r in 0..d {
+            let ar = self.amps[r];
+            for c in 0..d {
+                rho.set(r, c, ar * self.amps[c].conj());
+            }
+        }
+        Some(rho)
     }
 }
 

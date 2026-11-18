@@ -25,6 +25,7 @@ pub mod cryptanalysis;
 pub mod curriculum;
 pub mod density;
 pub mod gui;
+pub mod icon;
 pub mod plotter;
 pub mod pqc_lattice;
 pub mod qkd;

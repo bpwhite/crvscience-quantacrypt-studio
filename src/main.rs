@@ -13,13 +13,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://gnu.org>.
 
-#![forbid(unsafe_code)]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![deny(unsafe_code)]
 
 use clap::{Parser, Subcommand};
 use eframe::egui;
 use quantacrypt_studio::cryptanalysis::{run_grover_key_search, run_shor_cryptanalysis};
 use quantacrypt_studio::curriculum::ModuleId;
 use quantacrypt_studio::gui::{render_headless_screenshot, QuantaCryptApp};
+use quantacrypt_studio::icon::app_icon_data;
 use quantacrypt_studio::pqc_lattice::{run_ml_kem_lab, MlKemProfile};
 use quantacrypt_studio::qkd::{simulate_b92, simulate_bb84, simulate_e91};
 use quantacrypt_studio::qudit::{run_qudit_lab, QuditPreset};
@@ -50,7 +52,7 @@ struct Cli {
     #[arg(long)]
     headless_screenshot: Option<PathBuf>,
 
-    /// View preset for `--headless-screenshot` (1 = Circuit/Statevector, 2 = Photonic QKD BB84, 3 = Lattice PQC ML-KEM)
+    /// View preset for `--headless-screenshot` (1 = I1DoubleSlit, 2 = K1Bb84Qkd, 3 = C3MlKemLattice, 4 = Q2CircuitEntanglement)
     #[arg(long, default_value_t = 1)]
     screenshot_view: u8,
 
@@ -117,7 +119,24 @@ enum Commands {
     },
 }
 
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn attach_parent_console_if_cli() {
+    if std::env::args_os().len() > 1 {
+        const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+        extern "system" {
+            fn AttachConsole(dwProcessId: u32) -> i32;
+        }
+        unsafe {
+            let _ = AttachConsole(ATTACH_PARENT_PROCESS);
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(windows)]
+    attach_parent_console_if_cli();
+
     let cli = Cli::parse();
 
     if let Some(cmd) = cli.command {
@@ -282,6 +301,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1320.0, 840.0])
             .with_min_inner_size([960.0, 640.0])
+            .with_icon(std::sync::Arc::new(app_icon_data()))
             .with_title("QuantaCrypt Studio v2.2.0 — Quantum Simulation & Cryptography Workstation"),
         ..Default::default()
     };
