@@ -856,9 +856,13 @@ impl StochasticArena {
                         if u <= cdf { y_pick = i; break; }
                     }
                     self.c1_bin_counts[(y_pick / csz).min(buckets - 1)] += 1;
-                    if mod_pow_u64(ws.c1_base_a, rep.quantum_period_r, ws.c1_modulus_n) == 1 {
+                    let g = gcd_u64(ws.c1_base_a, ws.c1_modulus_n);
+                    if g > 1 && g < ws.c1_modulus_n {
+                        self.c1_locked_r = None;
+                        self.c1_locked_factors = rep.recovered_factors;
+                    } else if mod_pow_u64(ws.c1_base_a, rep.quantum_period_r, ws.c1_modulus_n) == 1
+                    {
                         self.c1_locked_r = Some(rep.quantum_period_r);
-                        let _ = gcd_u64(ws.c1_base_a, ws.c1_modulus_n);
                         self.c1_locked_factors = rep.recovered_factors;
                     }
                 }

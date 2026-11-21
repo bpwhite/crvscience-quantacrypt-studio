@@ -462,37 +462,62 @@ impl QuantaCryptApp {
                     let th = self.q2_angle_rad;
 
                     ui.horizontal_wrapped(|ui| {
-                        if ui.small_button("H").clicked() { self.push_q2_gate(GateOp::H(t)); }
-                        if ui.small_button("X").clicked() { self.push_q2_gate(GateOp::X(t)); }
-                        if ui.small_button("Y").clicked() { self.push_q2_gate(GateOp::Y(t)); }
-                        if ui.small_button("Z").clicked() { self.push_q2_gate(GateOp::Z(t)); }
-                        if ui.small_button("S").clicked() { self.push_q2_gate(GateOp::S(t)); }
-                        if ui.small_button("Sdg").clicked() { self.push_q2_gate(GateOp::Sdg(t)); }
-                        if ui.small_button("T").clicked() { self.push_q2_gate(GateOp::T(t)); }
-                        if ui.small_button("Tdg").clicked() { self.push_q2_gate(GateOp::Tdg(t)); }
-                        if ui.small_button("Rx").clicked() { self.push_q2_gate(GateOp::Rx { target: t, theta: th }); }
-                        if ui.small_button("Ry").clicked() { self.push_q2_gate(GateOp::Ry { target: t, theta: th }); }
-                        if ui.small_button("Rz").clicked() { self.push_q2_gate(GateOp::Rz { target: t, theta: th }); }
-                        if ui.small_button("P").clicked() { self.push_q2_gate(GateOp::Phase { target: t, lambda: th }); }
-                        if ui.small_button("M").clicked() { self.push_q2_gate(GateOp::Measure(t)); }
+                        if ui.small_button("H").on_hover_text("Hadamard gate (creates equal superposition (|0>+|1>)/sqrt(2) on q[t])").clicked() { self.push_q2_gate(GateOp::H(t)); }
+                        if ui.small_button("X").on_hover_text("Pauli-X (NOT) gate: pi rotation about Bloch X axis on q[t]").clicked() { self.push_q2_gate(GateOp::X(t)); }
+                        if ui.small_button("Y").on_hover_text("Pauli-Y gate: pi rotation about Bloch Y axis on q[t]").clicked() { self.push_q2_gate(GateOp::Y(t)); }
+                        if ui.small_button("Z").on_hover_text("Pauli-Z phase-flip gate: pi rotation about Bloch Z axis on q[t]").clicked() { self.push_q2_gate(GateOp::Z(t)); }
+                        if ui.small_button("S").on_hover_text("Phase gate sqrt(Z): +pi/2 Z-axis rotation on q[t]").clicked() { self.push_q2_gate(GateOp::S(t)); }
+                        if ui.small_button("Sdg").on_hover_text("Inverse Phase gate (S^dagger): -pi/2 Z-axis rotation on q[t]").clicked() { self.push_q2_gate(GateOp::Sdg(t)); }
+                        if ui.small_button("T").on_hover_text("T (pi/8) non-Clifford gate: +pi/4 Z-axis rotation on q[t]").clicked() { self.push_q2_gate(GateOp::T(t)); }
+                        if ui.small_button("Tdg").on_hover_text("Inverse T gate (T^dagger): -pi/4 Z-axis rotation on q[t]").clicked() { self.push_q2_gate(GateOp::Tdg(t)); }
+                        if ui.small_button("Rx").on_hover_text("Parametric X rotation Rx(theta) on q[t]").clicked() { self.push_q2_gate(GateOp::Rx { target: t, theta: th }); }
+                        if ui.small_button("Ry").on_hover_text("Parametric Y rotation Ry(theta) on q[t]").clicked() { self.push_q2_gate(GateOp::Ry { target: t, theta: th }); }
+                        if ui.small_button("Rz").on_hover_text("Parametric Z rotation Rz(theta) on q[t]").clicked() { self.push_q2_gate(GateOp::Rz { target: t, theta: th }); }
+                        if ui.small_button("P").on_hover_text("Phase shift gate P(lambda): applies e^(i*lambda) to |1> on q[t]").clicked() { self.push_q2_gate(GateOp::Phase { target: t, lambda: th }); }
+                        if ui.small_button("M").on_hover_text("Projective Z-basis measurement on q[t]").clicked() { self.push_q2_gate(GateOp::Measure(t)); }
                     });
 
                     let two_ok = n_q >= 2 && c != t;
                     let three_ok = n_q >= 3 && c != t && c2 != t && c != c2;
                     ui.horizontal_wrapped(|ui| {
-                        if ui.add_enabled(two_ok, egui::Button::new("CNOT").small()).clicked() {
+                        if ui
+                            .add_enabled(two_ok, egui::Button::new("CNOT").small())
+                            .on_hover_text("Controlled-NOT (CX): flips target q[t] when control q[c] = |1>")
+                            .on_disabled_hover_text("Requires >= 2 qubits with distinct control q[c] != target q[t]")
+                            .clicked()
+                        {
                             self.push_q2_gate(GateOp::Cnot { control: c, target: t });
                         }
-                        if ui.add_enabled(two_ok, egui::Button::new("CZ").small()).clicked() {
+                        if ui
+                            .add_enabled(two_ok, egui::Button::new("CZ").small())
+                            .on_hover_text("Controlled-Z: applies -1 phase flip to |11> on (q[c], q[t])")
+                            .on_disabled_hover_text("Requires >= 2 qubits with distinct control q[c] != target q[t]")
+                            .clicked()
+                        {
                             self.push_q2_gate(GateOp::Cz { control: c, target: t });
                         }
-                        if ui.add_enabled(two_ok, egui::Button::new("CP").small()).clicked() {
+                        if ui
+                            .add_enabled(two_ok, egui::Button::new("CP").small())
+                            .on_hover_text("Controlled-Phase CP(lambda): shifts |11> phase by e^(i*lambda)")
+                            .on_disabled_hover_text("Requires >= 2 qubits with distinct control q[c] != target q[t]")
+                            .clicked()
+                        {
                             self.push_q2_gate(GateOp::CPhase { control: c, target: t, lambda: th });
                         }
-                        if ui.add_enabled(two_ok, egui::Button::new("SWAP").small()).clicked() {
+                        if ui
+                            .add_enabled(two_ok, egui::Button::new("SWAP").small())
+                            .on_hover_text("SWAP gate: exchanges quantum states of q[c] and q[t]")
+                            .on_disabled_hover_text("Requires >= 2 qubits with distinct q[c] != q[t]")
+                            .clicked()
+                        {
                             self.push_q2_gate(GateOp::Swap(c, t));
                         }
-                        if ui.add_enabled(three_ok, egui::Button::new("CCX").small()).clicked() {
+                        if ui
+                            .add_enabled(three_ok, egui::Button::new("CCX").small())
+                            .on_hover_text("Toffoli (CCNOT): flips target q[t] when both q[c] = |1> and q[c2] = |1>")
+                            .on_disabled_hover_text("Requires >= 3 qubits with distinct q[c], q[c2], and q[t]")
+                            .clicked()
+                        {
                             self.push_q2_gate(GateOp::Toffoli { c1: c, c2, target: t });
                         }
                     });
@@ -907,12 +932,16 @@ impl QuantaCryptApp {
                     draw_bloch_sphere_cloud(ui, Vec2::new(w, h), mean, Some((src, "Alice Target")), &cloud, &mut self.bloch_yaw, &mut self.bloch_pitch, "Bob Teleported Ensemble vs. Alice Source");
                 }
                 ModuleId::Q4OpenSystemsQec => {
-                    let inv = 1.0 / (self.arena.q4_walkers.len() as f64);
-                    let mean = [
-                        self.arena.q4_walkers.iter().map(|b| b[0]).sum::<f64>() * inv,
-                        self.arena.q4_walkers.iter().map(|b| b[1]).sum::<f64>() * inv,
-                        self.arena.q4_walkers.iter().map(|b| b[2]).sum::<f64>() * inv,
-                    ];
+                    let mean = if self.arena.q4_walkers.is_empty() {
+                        [1.0, 0.0, 0.0]
+                    } else {
+                        let inv = 1.0 / (self.arena.q4_walkers.len() as f64);
+                        [
+                            self.arena.q4_walkers.iter().map(|b| b[0]).sum::<f64>() * inv,
+                            self.arena.q4_walkers.iter().map(|b| b[1]).sum::<f64>() * inv,
+                            self.arena.q4_walkers.iter().map(|b| b[2]).sum::<f64>() * inv,
+                        ]
+                    };
                     let h_top = (avail * 0.52_f32).max(250.0_f32);
                     let h_bot = (avail - h_top - 8.0_f32).max(190.0_f32);
                     draw_bloch_sphere_cloud(ui, Vec2::new(ui.available_width().min(h_top * 1.4_f32), h_top), mean, None, &self.arena.q4_walkers, &mut self.bloch_yaw, &mut self.bloch_pitch, "Monte-Carlo Open-System Walker Cloud");
@@ -1417,16 +1446,48 @@ impl QuantaCryptApp {
 
     pub fn ui_step(&mut self, ctx: &egui::Context) {
         ctx.set_visuals(egui::Visuals::dark());
-        if !ctx.wants_keyboard_input() {
-            if ctx.input(|i| i.key_pressed(egui::Key::Space)) { self.arena.playing = !self.arena.playing; }
-            if ctx.input(|i| i.key_pressed(egui::Key::R)) { self.arena.reset_stream(self.ws.seed, self.ws.active_module); }
-            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) { self.stage = AppStage::CurriculumHub; }
-        }
-        if ctx.input(|i| i.key_pressed(egui::Key::F1)) { self.show_help_modal = !self.show_help_modal; }
-        if ctx.input(|i| i.key_pressed(egui::Key::F5)) { self.quick_save(); }
-        if ctx.input(|i| i.key_pressed(egui::Key::F9)) { self.quick_load(); }
+        let wants_kb = ctx.wants_keyboard_input();
+        let (esc_pressed, space_pressed, r_pressed, f1_pressed, f5_pressed, f9_pressed, dt) =
+            ctx.input(|i| {
+                (
+                    i.key_pressed(egui::Key::Escape),
+                    i.key_pressed(egui::Key::Space),
+                    i.key_pressed(egui::Key::R),
+                    i.key_pressed(egui::Key::F1),
+                    i.key_pressed(egui::Key::F5),
+                    i.key_pressed(egui::Key::F9),
+                    i.unstable_dt as f64,
+                )
+            });
 
-        let dt = ctx.input(|i| i.unstable_dt) as f64;
+        if esc_pressed {
+            if self.show_about_modal {
+                self.show_about_modal = false;
+            } else if self.show_help_modal {
+                self.show_help_modal = false;
+            } else if self.show_workset_modal {
+                self.show_workset_modal = false;
+            } else if !wants_kb {
+                self.stage = AppStage::CurriculumHub;
+            }
+        }
+        if !wants_kb {
+            if space_pressed {
+                self.arena.playing = !self.arena.playing;
+            }
+            if r_pressed {
+                self.arena.reset_stream(self.ws.seed, self.ws.active_module);
+            }
+        }
+        if f1_pressed {
+            self.show_help_modal = !self.show_help_modal;
+        }
+        if f5_pressed {
+            self.quick_save();
+        }
+        if f9_pressed {
+            self.quick_load();
+        }
         if self.stage == AppStage::ModuleWorkspace {
             self.arena.step(dt, &self.ws);
             if self.arena.playing { ctx.request_repaint(); }

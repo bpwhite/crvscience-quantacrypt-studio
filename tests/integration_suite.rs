@@ -17,6 +17,7 @@
 
 use quantacrypt_studio::cryptanalysis::{run_grover_key_search, run_shor_cryptanalysis};
 use quantacrypt_studio::curriculum::ModuleId;
+use quantacrypt_studio::gui::{AppStage, QuantaCryptApp};
 use quantacrypt_studio::density::{
     simulate_decoherence_trajectory, simulate_three_qubit_qec, NoiseChannelKind, QecCodeKind,
 };
@@ -373,4 +374,77 @@ fn qudit_basis_labels_use_ascii_ket_without_tofu_glyph() {
 
     let rep = run_qudit_lab(4, QuditPreset::BellMaximallyEntangledPair, 0, 0);
     assert!(rep.basis_labels.iter().all(|l| !l.contains('\u{27E9}')));
+}
+
+#[test]
+fn shor_arena_locks_classical_non_coprime_factors_for_n35_a5() {
+    let mut ws = WorksetState::default();
+    ws.active_module = ModuleId::C1ShorRsa;
+    ws.c1_modulus_n = 35;
+    ws.c1_base_a = 5;
+    let mut arena = StochasticArena::new(2026, ModuleId::C1ShorRsa);
+    for _ in 0..10 {
+        arena.step(0.05, &ws);
+    }
+    assert_eq!(arena.c1_locked_r, None);
+    assert_eq!(arena.c1_locked_factors, Some((5, 7)));
+}
+
+#[test]
+fn headless_escape_dismisses_modals_before_returning_to_curriculum_hub() {
+    let tmp_db = std::env::temp_dir().join(format!(
+        "quantacrypt_escape_test_{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&tmp_db);
+
+    let ctx = eframe::egui::Context::default();
+    let mut app = QuantaCryptApp::new(tmp_db.clone(), true, Some(ModuleId::Q2CircuitEntanglement));
+    assert_eq!(app.stage, AppStage::ModuleWorkspace);
+
+    let run_frame = |ctx: &eframe::egui::Context,
+                     app: &mut QuantaCryptApp,
+                     events: Vec<eframe::egui::Event>| {
+        let raw = eframe::egui::RawInput {
+            screen_rect: Some(eframe::egui::Rect::from_min_size(
+                eframe::egui::Pos2::ZERO,
+                eframe::egui::vec2(1320.0, 840.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |c| app.ui_step(c));
+    };
+
+    let esc = || eframe::egui::Event::Key {
+        key: eframe::egui::Key::Escape,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: eframe::egui::Modifiers::NONE,
+    };
+
+    app.show_about_modal = true;
+    app.show_help_modal = true;
+    app.show_workset_modal = true;
+
+    run_frame(&ctx, &mut app, vec![esc()]);
+    assert!(!app.show_about_modal);
+    assert!(app.show_help_modal);
+    assert!(app.show_workset_modal);
+    assert_eq!(app.stage, AppStage::ModuleWorkspace);
+
+    run_frame(&ctx, &mut app, vec![esc()]);
+    assert!(!app.show_help_modal);
+    assert!(app.show_workset_modal);
+    assert_eq!(app.stage, AppStage::ModuleWorkspace);
+
+    run_frame(&ctx, &mut app, vec![esc()]);
+    assert!(!app.show_workset_modal);
+    assert_eq!(app.stage, AppStage::ModuleWorkspace);
+
+    run_frame(&ctx, &mut app, vec![esc()]);
+    assert_eq!(app.stage, AppStage::CurriculumHub);
+
+    let _ = std::fs::remove_file(&tmp_db);
 }

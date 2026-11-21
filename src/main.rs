@@ -36,7 +36,7 @@ use std::path::PathBuf;
     about = "Native safe-Rust quantum simulation & cryptography learning workstation (GUI + headless CLI)"
 )]
 struct Cli {
-    /// Launch directly into the active module workspace, skipping the 4-group Curriculum Hub
+    /// Launch directly into the active module workspace, skipping the 6-group (23-module) Curriculum Hub
     #[arg(long)]
     skip_hub: bool,
 
@@ -142,6 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(cmd) = cli.command {
         match cmd {
             Commands::RunQasm { path, shots, seed } => {
+                let shots = shots.max(1);
                 let src = fs::read_to_string(&path)?;
                 let circuit = QuantumCircuit::from_openqasm(&src)
                     .map_err(|e| format!("OpenQASM parse failure: {}", e))?;

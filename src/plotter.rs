@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://gnu.org>.
 
-//! Zero-drift native `egui::Painter` real-time stochastic animation & scientific plotters (`v2.1.0`):
+//! Zero-drift native `egui::Painter` real-time stochastic animation & scientific plotters (`v2.2.0`):
 //! - Double-slit 2D Phosphor hit detector screen (`draw_phosphor_screen`)
 //! - 3D-projected Bloch Sphere with stochastic quantum-jump walker cloud (`draw_bloch_sphere_cloud`)
 //! - Live Photonic Optical Fiber / Waveguide Stream (`draw_photon_stream`)
@@ -658,7 +658,7 @@ pub fn draw_density_heatmap(ui: &mut Ui, rho: &CMatrix, size_px: f32, title: &st
     let dim = rho.dim.clamp(1, 16);
     let width = ui.available_width().max(size_px);
     let height = size_px + 42.0_f32;
-    let (rect, _resp) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
     let painter = ui.painter_at(rect);
 
     painter.rect_filled(rect, 6.0_f32, BG_PANEL);
@@ -695,6 +695,8 @@ pub fn draw_density_heatmap(ui: &mut Ui, rho: &CMatrix, size_px: f32, title: &st
         }
     };
     let stride = if dim <= 4 { 1 } else if dim <= 8 { 2 } else { 4 };
+    let hover_pos = resp.hover_pos();
+    let mut hovered_cell: Option<(usize, usize, Rect, crate::complex::Complex64)> = None;
 
     for r in 0..dim {
         if r % stride == 0 {
@@ -720,6 +722,11 @@ pub fn draw_density_heatmap(ui: &mut Ui, rho: &CMatrix, size_px: f32, title: &st
                 Pos2::new(grid_rect.left() + ((c + 1) as f32) * cell - 0.8_f32, grid_rect.top() + ((r + 1) as f32) * cell - 0.8_f32),
             );
             painter.rect_filled(c_rect, 1.5_f32, fill);
+            if let Some(hp) = hover_pos {
+                if c_rect.expand(0.8_f32).contains(hp) {
+                    hovered_cell = Some((r, c, c_rect, z));
+                }
+            }
         }
     }
     for c in 0..dim {
@@ -732,6 +739,19 @@ pub fn draw_density_heatmap(ui: &mut Ui, rho: &CMatrix, size_px: f32, title: &st
                 TEXT_DIM,
             );
         }
+    }
+    if let Some((r, c, c_rect, z)) = hovered_cell {
+        stroke_rect_box(&painter, c_rect, Stroke::new(1.3_f32, Color32::WHITE));
+        resp.on_hover_text(format!(
+            "rho[{}, {}]\nAmplitude: {:+.4} {:+.4}i\n|rho|: {:.4}  |  arg: {:.1} deg ({:+.3} rad)",
+            ket_label(r),
+            ket_label(c),
+            z.re,
+            z.im,
+            z.norm(),
+            z.arg().to_degrees(),
+            z.arg(),
+        ));
     }
 }
 
