@@ -22,11 +22,27 @@
 use crate::cryptanalysis::{gcd_u64, mod_pow_u64, run_shor_cryptanalysis};
 use crate::curriculum::ModuleId;
 use crate::density::NoiseChannelKind;
-use crate::pqc_lattice::run_ml_kem_lab;
+use crate::pqc_lattice::{negacyclic_int_mul, run_ml_kem_lab, sample_sparse_challenge};
 use crate::rng_sha256::DeterministicRng;
 use crate::workset::WorksetState;
 use std::collections::VecDeque;
 use std::f64::consts::PI;
+
+pub const A3_RYDBERG_EDGES: [(usize, usize); 12] = [
+    (0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6),
+    (6, 7), (7, 0), (0, 4), (1, 5), (2, 6), (3, 7),
+];
+
+/// Returns the cut size (`0..=10`) of an 8-bit spin assignment on the 12-edge Rydberg graph.
+pub fn qaoa_cut_value(bitmask: u8) -> usize {
+    let mut cut = 0usize;
+    for &(u, v) in &A3_RYDBERG_EDGES {
+        if ((bitmask >> u) & 1) != ((bitmask >> v) & 1) {
+            cut += 1;
+        }
+    }
+    cut
+}
 
 #[derive(Clone, Debug)]
 pub struct FlyingPhoton {
@@ -290,7 +306,7 @@ impl StochasticArena {
             a1_trace: VecDeque::with_capacity(150),
             a2_theta: 1.15,
             a2_energy_trace: VecDeque::with_capacity(150),
-            a3_cut_bins: vec![0; 10],
+            a3_cut_bins: vec![0; 11],
             a3_last_mask: 0b0101_1010,
             a3_ratio_trace: VecDeque::with_capacity(150),
             a4_batches: 0,
@@ -382,7 +398,7 @@ impl StochasticArena {
         self.a1_trace.clear();
         self.a2_theta = 1.15;
         self.a2_energy_trace.clear();
-        self.a3_cut_bins = vec![0; 10];
+        self.a3_cut_bins = vec![0; 11];
         self.a3_ratio_trace.clear();
         self.a4_batches = 0;
         self.a4_distilled_ok = 0;
@@ -405,6 +421,18 @@ impl StochasticArena {
         self.a5_fid_trace.clear();
         self.a4_aborted_blocks = 0;
         self.a4_err_trace.clear();
+    }
+
+    /// Evaluates `bitmask` on the 12-edge Rydberg graph (`C_max = 10`) and increments `a3_cut_bins[cut]`.
+    pub fn record_a3_cut_sample(&mut self, bitmask: u8) -> usize {
+        let cut = qaoa_cut_value(bitmask);
+        self.a3_last_mask = bitmask;
+        let idx = cut.min(10);
+        if self.a3_cut_bins.len() <= idx {
+            self.a3_cut_bins.resize(11, 0);
+        }
+        self.a3_cut_bins[idx] += 1;
+        cut
     }
 
     pub fn step(&mut self, raw_dt: f64, ws: &WorksetState) {
@@ -896,18 +924,22 @@ impl StochasticArena {
                 let beta = (tau as i32) * eta;
                 let safe = (g1 - beta).max(4);
                 let bmax = g1 + beta;
+                let mut s_rng = DeterministicRng::from_seed(ws.seed ^ 0x4D4C_4453);
+                let secret_s: Vec<i32> = (0..16)
+                    .map(|_| (s_rng.next_usize((2 * eta + 1) as usize) as i32) - eta)
+                    .collect();
                 self.accum_events += dt * 60.0;
                 while self.accum_events >= 1.0 {
                     self.accum_events -= 1.0;
                     self.total_events += 1;
                     self.c4_trials += 1;
+                    let challenge_c = sample_sparse_challenge(16, tau, &mut self.rng);
+                    let cs_vec = negacyclic_int_mul(&challenge_c, &secret_s);
                     let mut ok = true;
                     let mut z0 = 0i32;
                     for d_i in 0..16 {
-                        let s_i = (self.rng.next_usize((2 * eta + 1) as usize) as i32) - eta;
                         let y_i = (self.rng.next_usize((2 * g1) as usize) as i32) - g1 + 1;
-                        let cs = (s_i * (self.rng.next_usize(tau + 1) as i32)).clamp(-beta, beta);
-                        let z = y_i + cs;
+                        let z = y_i + cs_vec[d_i];
                         if d_i == 0 { z0 = z; }
                         if z.abs() >= safe { ok = false; }
                     }
@@ -988,10 +1020,6 @@ impl StochasticArena {
             }
             ModuleId::A3QaoaMaxCut => {
                 // 8-node cubic/ring-chord Rydberg graph with 12 edges (optimal Max-Cut C_max = 10)
-                const EDGES: [(usize, usize); 12] = [
-                    (0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6),
-                    (6, 7), (7, 0), (0, 4), (1, 5), (2, 6), (3, 7),
-                ];
                 let p_depth = ws.a3_depth_p.clamp(1, 6) as f64;
                 let resonance = (ws.a3_drive_gamma * PI * 0.5).sin().abs();
                 let beta_temp = 0.35 + 0.55 * p_depth * resonance;
@@ -1000,29 +1028,18 @@ impl StochasticArena {
                 while self.accum_events >= 1.0 {
                     self.accum_events -= 1.0;
                     self.total_events += 1;
-                    // Sample bitstring weighted by QAOA interference concentration exp(beta_temp * (cut - 6))
+                    // Sample bitstring weighted by QAOA interference concentration exp(beta_temp * (cut - 10))
                     let mut best_m = 0u8;
-                    let mut chosen_cut = 0usize;
                     for _ in 0..8 {
                         let cand = (self.rng.next_u32() & 0xFF) as u8;
-                        let mut cut = 0usize;
-                        for &(u, v) in &EDGES {
-                            if ((cand >> u) & 1) != ((cand >> v) & 1) {
-                                cut += 1;
-                            }
-                        }
+                        let cut = qaoa_cut_value(cand);
                         let weight = (beta_temp * ((cut as f64) - 10.0)).exp();
+                        best_m = cand;
                         if self.rng.next_f64() <= weight {
-                            best_m = cand;
-                            chosen_cut = cut;
                             break;
                         }
-                        best_m = cand;
-                        chosen_cut = cut;
                     }
-                    self.a3_last_mask = best_m;
-                    let idx = chosen_cut.min(9);
-                    self.a3_cut_bins[idx] += 1;
+                    self.record_a3_cut_sample(best_m);
                 }
                 let tot_shots: u64 = self.a3_cut_bins.iter().sum();
                 if tot_shots > 0 {

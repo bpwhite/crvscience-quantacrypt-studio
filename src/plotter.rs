@@ -84,7 +84,7 @@ pub fn draw_phosphor_screen(ui: &mut Ui, hits: &VecDeque<(f32, f32)>, height: f3
 
 /// Renders a `d x d` rotated surface-code lattice (`A1`) highlighting stochastic X (rose) and Z (amber) errors and triggered plaquettes.
 pub fn draw_surface_code_grid(ui: &mut Ui, d: usize, data_errors: &[u8], size_px: f32) {
-    let (rect, _resp) = ui.allocate_exact_size(Vec2::new(size_px, size_px + 28.0_f32), Sense::hover());
+    let (rect, _resp) = ui.allocate_exact_size(Vec2::new(size_px, size_px + 40.0_f32), Sense::hover());
     let painter = ui.painter_at(rect);
 
     painter.rect_filled(rect, 6.0_f32, BG_PANEL);
@@ -97,10 +97,80 @@ pub fn draw_surface_code_grid(ui: &mut Ui, d: usize, data_errors: &[u8], size_px
         TEXT_MAIN,
     );
 
-    let grid = Rect::from_min_max(Pos2::new(rect.left() + 20.0_f32, rect.top() + 30.0_f32), Pos2::new(rect.right() - 20.0_f32, rect.bottom() - 14.0_f32));
+    let side = (rect.width() - 36.0_f32).min(rect.height() - 56.0_f32).max(80.0_f32);
+    let gx0 = rect.left() + (rect.width() - side) * 0.5_f32;
+    let gy0 = rect.top() + 30.0_f32;
+    let grid = Rect::from_min_size(Pos2::new(gx0, gy0), Vec2::splat(side));
     let step = grid.width() / (d.max(2) as f32);
 
-    // Plaquette stabilizer parity tiles `(r, c)` over `(d-1) x (d-1)` dual squares
+    let plaq_fill = |is_x: bool, syndrome: bool| -> Color32 {
+        if syndrome {
+            if is_x {
+                Color32::from_rgba_unmultiplied(52, 211, 153, 150)
+            } else {
+                Color32::from_rgba_unmultiplied(167, 139, 250, 150)
+            }
+        } else if is_x {
+            Color32::from_rgb(20, 34, 46)
+        } else {
+            Color32::from_rgb(28, 24, 46)
+        }
+    };
+
+    // Weight-2 boundary half-plaquettes (Top & Bottom = Z-type, Left & Right = X-type)
+    let wing = 0.42_f32 * step;
+    for c in 0..d.saturating_sub(1) {
+        if c % 2 == 0 {
+            let e0 = data_errors.get(c).copied().unwrap_or(0);
+            let e1 = data_errors.get(c + 1).copied().unwrap_or(0);
+            let syn = [e0, e1].iter().filter(|&&e| e == 1).count() % 2 == 1;
+            let b_rect = Rect::from_min_max(
+                Pos2::new(grid.left() + (c as f32 + 0.5_f32) * step, grid.top() + 0.5_f32 * step - wing),
+                Pos2::new(grid.left() + (c as f32 + 1.5_f32) * step, grid.top() + 0.5_f32 * step),
+            );
+            painter.rect_filled(b_rect, 4.0_f32, plaq_fill(false, syn));
+            stroke_rect_box(&painter, b_rect, Stroke::new(1.0_f32, GRID_LINE));
+        }
+        if ((d.saturating_sub(2)) + c) % 2 == 0 {
+            let r_last = d - 1;
+            let e0 = data_errors.get(r_last * d + c).copied().unwrap_or(0);
+            let e1 = data_errors.get(r_last * d + c + 1).copied().unwrap_or(0);
+            let syn = [e0, e1].iter().filter(|&&e| e == 1).count() % 2 == 1;
+            let b_rect = Rect::from_min_max(
+                Pos2::new(grid.left() + (c as f32 + 0.5_f32) * step, grid.top() + (r_last as f32 + 0.5_f32) * step),
+                Pos2::new(grid.left() + (c as f32 + 1.5_f32) * step, grid.top() + (r_last as f32 + 0.5_f32) * step + wing),
+            );
+            painter.rect_filled(b_rect, 4.0_f32, plaq_fill(false, syn));
+            stroke_rect_box(&painter, b_rect, Stroke::new(1.0_f32, GRID_LINE));
+        }
+    }
+    for r in 0..d.saturating_sub(1) {
+        if r % 2 == 1 {
+            let e0 = data_errors.get(r * d).copied().unwrap_or(0);
+            let e1 = data_errors.get((r + 1) * d).copied().unwrap_or(0);
+            let syn = [e0, e1].iter().filter(|&&e| e == 2).count() % 2 == 1;
+            let b_rect = Rect::from_min_max(
+                Pos2::new(grid.left() + 0.5_f32 * step - wing, grid.top() + (r as f32 + 0.5_f32) * step),
+                Pos2::new(grid.left() + 0.5_f32 * step, grid.top() + (r as f32 + 1.5_f32) * step),
+            );
+            painter.rect_filled(b_rect, 4.0_f32, plaq_fill(true, syn));
+            stroke_rect_box(&painter, b_rect, Stroke::new(1.0_f32, GRID_LINE));
+        }
+        if (r + d.saturating_sub(2)) % 2 == 1 {
+            let c_last = d - 1;
+            let e0 = data_errors.get(r * d + c_last).copied().unwrap_or(0);
+            let e1 = data_errors.get((r + 1) * d + c_last).copied().unwrap_or(0);
+            let syn = [e0, e1].iter().filter(|&&e| e == 2).count() % 2 == 1;
+            let b_rect = Rect::from_min_max(
+                Pos2::new(grid.left() + (c_last as f32 + 0.5_f32) * step, grid.top() + (r as f32 + 0.5_f32) * step),
+                Pos2::new(grid.left() + (c_last as f32 + 0.5_f32) * step + wing, grid.top() + (r as f32 + 1.5_f32) * step),
+            );
+            painter.rect_filled(b_rect, 4.0_f32, plaq_fill(true, syn));
+            stroke_rect_box(&painter, b_rect, Stroke::new(1.0_f32, GRID_LINE));
+        }
+    }
+
+    // Interior weight-4 plaquette stabilizer tiles `(r, c)` over `(d-1) x (d-1)` dual squares
     for r in 0..d.saturating_sub(1) {
         for c in 0..d.saturating_sub(1) {
             let is_x_plaq = (r + c) % 2 == 0;
@@ -120,18 +190,7 @@ pub fn draw_surface_code_grid(ui: &mut Ui, d: usize, data_errors: &[u8], size_px
                 Pos2::new(grid.left() + (c as f32 + 0.5_f32) * step, grid.top() + (r as f32 + 0.5_f32) * step),
                 Pos2::new(grid.left() + (c as f32 + 1.5_f32) * step, grid.top() + (r as f32 + 1.5_f32) * step),
             );
-            let fill = if syndrome {
-                if is_x_plaq {
-                    Color32::from_rgba_unmultiplied(52, 211, 153, 140)
-                } else {
-                    Color32::from_rgba_unmultiplied(167, 139, 250, 140)
-                }
-            } else if is_x_plaq {
-                Color32::from_rgb(20, 32, 44)
-            } else {
-                Color32::from_rgb(26, 24, 44)
-            };
-            painter.rect_filled(tile, 3.0_f32, fill);
+            painter.rect_filled(tile, 3.0_f32, plaq_fill(is_x_plaq, syndrome));
             stroke_rect_box(&painter, tile, Stroke::new(1.0_f32, GRID_LINE));
         }
     }
@@ -149,23 +208,49 @@ pub fn draw_surface_code_grid(ui: &mut Ui, d: usize, data_errors: &[u8], size_px
             painter.circle_filled(p, if err > 0 { 6.2_f32 } else { 4.2_f32 }, col);
         }
     }
+
+    // Compact legend along bottom
+    let mut lx = rect.left() + 10.0_f32;
+    let ly = rect.bottom() - 10.0_f32;
+    for (lbl, col) in [
+        ("X-stab", ACCENT_EMERALD),
+        ("Z-stab", ACCENT_VIOLET),
+        ("X-err", ACCENT_ROSE),
+        ("Z-err", ACCENT_AMBER),
+    ] {
+        painter.rect_filled(Rect::from_center_size(Pos2::new(lx + 4.0_f32, ly), Vec2::splat(7.0_f32)), 1.5_f32, col);
+        painter.text(Pos2::new(lx + 11.0_f32, ly), Align2::LEFT_CENTER, lbl, FontId::monospace(9.0_f32), col);
+        lx += (lbl.len() as f32) * 5.8_f32 + 18.0_f32;
+    }
 }
 
-/// Renders an 8-node Rydberg Max-Cut graph (`A3`) coloring spin partitions and cut edges.
+/// Renders an 8-node Rydberg Max-Cut graph (`A3`) coloring spin partitions, cut edges, and legend.
 pub fn draw_qaoa_ring_graph(ui: &mut Ui, bitmask: u8, size_px: f32) {
     const EDGES: [(usize, usize); 12] = [
         (0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6),
         (6, 7), (7, 0), (0, 4), (1, 5), (2, 6), (3, 7),
     ];
-    let (rect, _resp) = ui.allocate_exact_size(Vec2::new(size_px, size_px + 28.0_f32), Sense::hover());
+    let (rect, _resp) = ui.allocate_exact_size(Vec2::new(size_px, size_px + 40.0_f32), Sense::hover());
     let painter = ui.painter_at(rect);
 
     painter.rect_filled(rect, 6.0_f32, BG_PANEL);
     stroke_rect_box(&painter, rect, Stroke::new(1.0_f32, BORDER_LINE));
     painter.text(Pos2::new(rect.left() + 10.0_f32, rect.top() + 6.0_f32), Align2::LEFT_TOP, "8-Atom Rydberg Graph Partition", FontId::proportional(12.0_f32), TEXT_MAIN);
 
-    let center = Pos2::new(rect.center().x, rect.center().y + 10.0_f32);
-    let rad = (size_px * 0.35_f32).max(40.0_f32);
+    let cut_count = EDGES
+        .iter()
+        .filter(|&&(u, v)| ((bitmask >> u) & 1) != ((bitmask >> v) & 1))
+        .count();
+    painter.text(
+        Pos2::new(rect.right() - 10.0_f32, rect.top() + 7.0_f32),
+        Align2::RIGHT_TOP,
+        format!("Cut = {}/10", cut_count),
+        FontId::monospace(10.5_f32),
+        ACCENT_EMERALD,
+    );
+
+    let center = Pos2::new(rect.center().x, rect.center().y + 4.0_f32);
+    let rad = (size_px * 0.34_f32).max(38.0_f32);
     let node_pos = |i: usize| -> Pos2 {
         let ang = (i as f32) * std::f32::consts::TAU / 8.0_f32 - std::f32::consts::FRAC_PI_2;
         Pos2::new(center.x + rad * ang.cos(), center.y + rad * ang.sin())
@@ -181,7 +266,21 @@ pub fn draw_qaoa_ring_graph(ui: &mut Ui, bitmask: u8, size_px: f32) {
     for i in 0..8 {
         let bit = (bitmask >> i) & 1;
         let col = if bit == 1 { ACCENT_AMBER } else { ACCENT_CYAN };
-        painter.circle_filled(node_pos(i), 8.5_f32, col);
+        let p = node_pos(i);
+        painter.circle_filled(p, 9.0_f32, col);
+        painter.text(p, Align2::CENTER_CENTER, format!("{}", i), FontId::monospace(9.0_f32), Color32::from_rgb(10, 14, 22));
+    }
+
+    let mut lx = rect.left() + 10.0_f32;
+    let ly = rect.bottom() - 10.0_f32;
+    for (lbl, col) in [
+        ("Spin |0>", ACCENT_CYAN),
+        ("Spin |1>", ACCENT_AMBER),
+        ("Cut Edge", ACCENT_EMERALD),
+    ] {
+        painter.rect_filled(Rect::from_center_size(Pos2::new(lx + 4.0_f32, ly), Vec2::splat(7.0_f32)), 1.5_f32, col);
+        painter.text(Pos2::new(lx + 11.0_f32, ly), Align2::LEFT_CENTER, lbl, FontId::monospace(9.0_f32), col);
+        lx += (lbl.len() as f32) * 5.8_f32 + 18.0_f32;
     }
 }
 
@@ -195,11 +294,15 @@ pub fn draw_bloch_sphere_cloud(
     pitch: &mut f32,
     caption: &str,
 ) {
-    let (rect, resp) = ui.allocate_exact_size(size, Sense::drag());
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click_and_drag());
     if resp.dragged() {
         let delta = resp.drag_delta();
         *yaw += delta.x * 0.012_f32;
         *pitch = (*pitch + delta.y * 0.012_f32).clamp(-1.35_f32, 1.35_f32);
+    }
+    if resp.double_clicked() {
+        *yaw = 0.62;
+        *pitch = 0.34;
     }
 
     let painter = ui.painter_at(rect);
@@ -210,55 +313,112 @@ pub fn draw_bloch_sphere_cloud(
     let radius = (rect.width().min(rect.height() - 34.0_f32) * 0.37_f32).max(40.0_f32);
     let (cy, sy, cp, sp) = (yaw.cos(), yaw.sin(), pitch.cos(), pitch.sin());
 
-    let project = |p: [f64; 3]| -> Pos2 {
+    let project_depth = |p: [f64; 3]| -> (Pos2, f32) {
         let (x, y, z) = (p[0] as f32, p[1] as f32, p[2] as f32);
         let rx = -sy * x + cy * y;
         let ry_depth = cy * x + sy * y;
-        Pos2::new(center.x + rx * radius, center.y + (-cp * z + sp * ry_depth) * radius)
+        let depth = cp * ry_depth + sp * z;
+        let pos = Pos2::new(center.x + rx * radius, center.y + (-cp * z + sp * ry_depth) * radius);
+        (pos, depth)
     };
 
     painter.circle_stroke(center, radius, Stroke::new(1.4_f32, Color32::from_rgb(78, 102, 138)));
+
+    // 3 Great circles with front solid / back dimmed-dashed occlusion cue
+    let front_arc = Stroke::new(1.15_f32, Color32::from_rgb(74, 96, 128));
+    let back_arc = Stroke::new(0.85_f32, Color32::from_rgba_unmultiplied(48, 62, 84, 110));
     for ring in 0..3 {
-        let pts: Vec<Pos2> = (0..=64)
+        let pts: Vec<(Pos2, f32)> = (0..=64)
             .map(|k| {
                 let t = (k as f64) * 2.0 * PI / 64.0;
-                project(match ring {
+                project_depth(match ring {
                     0 => [t.cos(), t.sin(), 0.0],
                     1 => [t.cos(), 0.0, t.sin()],
                     _ => [0.0, t.cos(), t.sin()],
                 })
             })
             .collect();
-        painter.add(Shape::line(pts, Stroke::new(1.0_f32, GRID_LINE)));
+        for k in 0..64 {
+            let (p0, d0) = pts[k];
+            let (p1, d1) = pts[k + 1];
+            let mid_d = 0.5_f32 * (d0 + d1);
+            if mid_d >= 0.0_f32 {
+                painter.line_segment([p0, p1], front_arc);
+            } else if k % 2 == 0 {
+                painter.line_segment([p0, p1], back_arc);
+            }
+        }
     }
 
+    // Principal Bloch axes split by origin with depth dimming
     for (neg, pos, ln, lp) in [
         ([-1.0, 0.0, 0.0], [1.0, 0.0, 0.0], "|->", "|+>"),
         ([0.0, -1.0, 0.0], [0.0, 1.0, 0.0], "|-i>", "|+i>"),
         ([0.0, 0.0, -1.0], [0.0, 0.0, 1.0], "|1>", "|0>"),
     ] {
-        let p_neg = project(neg);
-        let p_pos = project(pos);
-        painter.line_segment([p_neg, p_pos], Stroke::new(1.0_f32, Color32::from_rgb(55, 71, 96)));
-        painter.text(p_pos, Align2::CENTER_BOTTOM, lp, FontId::proportional(11.5_f32), TEXT_DIM);
-        painter.text(p_neg, Align2::CENTER_TOP, ln, FontId::proportional(11.5_f32), TEXT_DIM);
+        let (p_neg, d_neg) = project_depth(neg);
+        let (p_pos, d_pos) = project_depth(pos);
+        let col_pos = if d_pos >= 0.0 { Color32::from_rgb(84, 108, 144) } else { Color32::from_rgba_unmultiplied(50, 64, 88, 130) };
+        let col_neg = if d_neg >= 0.0 { Color32::from_rgb(84, 108, 144) } else { Color32::from_rgba_unmultiplied(50, 64, 88, 130) };
+        painter.line_segment([center, p_pos], Stroke::new(1.0_f32, col_pos));
+        painter.line_segment([center, p_neg], Stroke::new(0.85_f32, col_neg));
+        painter.text(p_pos, Align2::CENTER_BOTTOM, lp, FontId::proportional(11.5_f32), if d_pos >= 0.0 { TEXT_MAIN } else { TEXT_DIM });
+        painter.text(p_neg, Align2::CENTER_TOP, ln, FontId::proportional(11.5_f32), if d_neg >= 0.0 { TEXT_MAIN } else { TEXT_DIM });
     }
 
+    let draw_arrow_vec = |p: [f64; 3], col: Color32, width: f32, head_len: f32| {
+        let (tip, _d) = project_depth(p);
+        painter.line_segment([center, tip], Stroke::new(width, col));
+        let delta = tip - center;
+        let len = delta.length();
+        if len > 8.0_f32 {
+            let dir = delta / len;
+            let perp = Vec2::new(-dir.y, dir.x);
+            let left = tip - dir * head_len + perp * (head_len * 0.45_f32);
+            let right = tip - dir * head_len - perp * (head_len * 0.45_f32);
+            painter.add(Shape::convex_polygon(vec![tip, left, right], col, Stroke::NONE));
+        } else {
+            painter.circle_filled(tip, 4.5_f32, col);
+        }
+        tip
+    };
+
+    // Depth-sorted ensemble walkers + Bloch vectors (back-to-front painter order)
+    enum BlochItem<'a> {
+        Walker(Pos2, f32),
+        Mean,
+        Secondary([f64; 3], &'a str),
+    }
+    let mut items: Vec<(f32, BlochItem<'_>)> = Vec::with_capacity(cloud_walkers.len() + 2);
     for &w in cloud_walkers {
-        painter.circle_filled(project(w), 3.0_f32, Color32::from_rgba_unmultiplied(167, 139, 250, 185));
+        let (pos, d) = project_depth(w);
+        items.push((d, BlochItem::Walker(pos, d)));
     }
-
+    let (_, mean_d) = project_depth(mean_bloch);
+    items.push((mean_d, BlochItem::Mean));
     if let Some((sec_b, sec_lbl)) = secondary_bloch {
-        let tip_s = project(sec_b);
-        painter.line_segment([center, tip_s], Stroke::new(2.0_f32, ACCENT_AMBER));
-        painter.circle_filled(tip_s, 4.5_f32, ACCENT_AMBER);
-        painter.text(Pos2::new(tip_s.x + 6.0_f32, tip_s.y - 6.0_f32), Align2::LEFT_BOTTOM, sec_lbl, FontId::proportional(11.0_f32), ACCENT_AMBER);
+        let (_, sec_d) = project_depth(sec_b);
+        items.push((sec_d, BlochItem::Secondary(sec_b, sec_lbl)));
     }
+    items.sort_by(|a, b| a.0.total_cmp(&b.0));
 
-    let tip = project(mean_bloch);
-    painter.line_segment([center, tip], Stroke::new(3.0_f32, ACCENT_CYAN));
+    for (_, item) in items {
+        match item {
+            BlochItem::Walker(pos, d) => {
+                let alpha = if d >= 0.0 { 205u8 } else { 95u8 };
+                let r = if d >= 0.0 { 3.2_f32 } else { 2.3_f32 };
+                painter.circle_filled(pos, r, Color32::from_rgba_unmultiplied(167, 139, 250, alpha));
+            }
+            BlochItem::Secondary(sec_b, sec_lbl) => {
+                let tip_s = draw_arrow_vec(sec_b, ACCENT_AMBER, 2.0_f32, 8.5_f32);
+                painter.text(Pos2::new(tip_s.x + 6.0_f32, tip_s.y - 6.0_f32), Align2::LEFT_BOTTOM, sec_lbl, FontId::proportional(11.0_f32), ACCENT_AMBER);
+            }
+            BlochItem::Mean => {
+                draw_arrow_vec(mean_bloch, ACCENT_CYAN, 3.0_f32, 10.5_f32);
+            }
+        }
+    }
     painter.circle_filled(center, 3.0_f32, TEXT_MAIN);
-    painter.circle_filled(tip, 5.5_f32, ACCENT_CYAN);
 
     let norm = (mean_bloch[0] * mean_bloch[0] + mean_bloch[1] * mean_bloch[1] + mean_bloch[2] * mean_bloch[2]).sqrt();
     painter.text(Pos2::new(rect.left() + 10.0_f32, rect.top() + 8.0_f32), Align2::LEFT_TOP, caption, FontId::proportional(12.5_f32), TEXT_MAIN);
@@ -267,6 +427,13 @@ pub fn draw_bloch_sphere_cloud(
         Align2::LEFT_BOTTOM,
         format!("<r> = ({:+.2}, {:+.2}, {:+.2})  ||<r>|| = {:.3}", mean_bloch[0], mean_bloch[1], mean_bloch[2], norm),
         FontId::monospace(10.5_f32),
+        TEXT_DIM,
+    );
+    painter.text(
+        Pos2::new(rect.right() - 10.0_f32, rect.bottom() - 8.0_f32),
+        Align2::RIGHT_BOTTOM,
+        "Drag | Dbl-click reset",
+        FontId::proportional(9.5_f32),
         TEXT_DIM,
     );
 }
@@ -676,7 +843,7 @@ pub fn draw_density_heatmap(ui: &mut Ui, rho: &CMatrix, size_px: f32, title: &st
     let left_pad = if qubits <= 2 { 34.0_f32 } else if qubits == 3 { 40.0_f32 } else { 44.0_f32 };
     let top_pad = 38.0_f32;
     let bottom_pad = 22.0_f32;
-    let right_pad = 14.0_f32;
+    let right_pad = if rect.width() >= 250.0_f32 { 88.0_f32 } else { 62.0_f32 };
     let side = (rect.width() - left_pad - right_pad)
         .min(rect.height() - top_pad - bottom_pad)
         .max(48.0_f32);
@@ -753,6 +920,53 @@ pub fn draw_density_heatmap(ui: &mut Ui, rho: &CMatrix, size_px: f32, title: &st
             z.arg(),
         ));
     }
+
+    // Phase colorwheel & magnitude bar in right margin
+    let legend_cx = rect.right() - right_pad * 0.5_f32;
+    let wheel_r = (right_pad * 0.25_f32).clamp(14.0_f32, 22.0_f32);
+    let wheel_c = Pos2::new(legend_cx, rect.top() + top_pad + wheel_r + 10.0_f32);
+    painter.text(Pos2::new(legend_cx, rect.top() + top_pad - 2.0_f32), Align2::CENTER_TOP, "Phase arg", FontId::monospace(8.5_f32), TEXT_DIM);
+    for seg in 0..36 {
+        let a0 = (seg as f64) * 2.0 * PI / 36.0 - PI;
+        let a1 = ((seg + 1) as f64) * 2.0 * PI / 36.0 - PI;
+        let [pr, pg, pb] = phase_to_rgb(0.5 * (a0 + a1));
+        let col = Color32::from_rgb(pr, pg, pb);
+        let p0 = Pos2::new(wheel_c.x + wheel_r * (a0 as f32).cos(), wheel_c.y - wheel_r * (a0 as f32).sin());
+        let p1 = Pos2::new(wheel_c.x + wheel_r * (a1 as f32).cos(), wheel_c.y - wheel_r * (a1 as f32).sin());
+        painter.add(Shape::convex_polygon(vec![wheel_c, p0, p1], col, Stroke::NONE));
+    }
+    painter.circle_filled(wheel_c, wheel_r * 0.34_f32, BG_PANEL);
+    painter.circle_stroke(wheel_c, wheel_r, Stroke::new(1.0_f32, BORDER_LINE));
+    painter.text(Pos2::new(wheel_c.x + wheel_r + 3.0_f32, wheel_c.y), Align2::LEFT_CENTER, "0", FontId::monospace(8.0_f32), TEXT_DIM);
+    painter.text(Pos2::new(wheel_c.x, wheel_c.y - wheel_r - 2.0_f32), Align2::CENTER_BOTTOM, "+pi/2", FontId::monospace(7.5_f32), TEXT_DIM);
+    painter.text(Pos2::new(wheel_c.x - wheel_r - 2.0_f32, wheel_c.y), Align2::RIGHT_CENTER, "pi", FontId::monospace(8.0_f32), TEXT_DIM);
+    painter.text(Pos2::new(wheel_c.x, wheel_c.y + wheel_r + 2.0_f32), Align2::CENTER_TOP, "-pi/2", FontId::monospace(7.5_f32), TEXT_DIM);
+
+    // Magnitude bar (`0 -> 1`) below colorwheel
+    let bar_top = (wheel_c.y + wheel_r + 22.0_f32).min(rect.bottom() - 48.0_f32);
+    let bar_bot = (rect.bottom() - bottom_pad).max(bar_top + 22.0_f32);
+    let bar_rect = Rect::from_min_max(Pos2::new(legend_cx - 7.0_f32, bar_top), Pos2::new(legend_cx + 7.0_f32, bar_bot));
+    painter.text(Pos2::new(legend_cx, bar_top - 3.0_f32), Align2::CENTER_BOTTOM, "|rho|", FontId::monospace(8.5_f32), TEXT_DIM);
+    let steps = 20;
+    for s in 0..steps {
+        let f0 = (s as f32) / (steps as f32);
+        let f1 = ((s + 1) as f32) / (steps as f32);
+        let mag = 1.0_f32 - 0.5_f32 * (f0 + f1);
+        let c = Color32::from_rgb(
+            (18.0_f32 + (ACCENT_CYAN.r() as f32 - 18.0_f32) * mag) as u8,
+            (24.0_f32 + (ACCENT_CYAN.g() as f32 - 24.0_f32) * mag) as u8,
+            (34.0_f32 + (ACCENT_CYAN.b() as f32 - 34.0_f32) * mag) as u8,
+        );
+        let strip = Rect::from_min_max(
+            Pos2::new(bar_rect.left(), bar_rect.top() + f0 * bar_rect.height()),
+            Pos2::new(bar_rect.right(), bar_rect.top() + f1 * bar_rect.height()),
+        );
+        painter.rect_filled(strip, 0.0_f32, c);
+    }
+    stroke_rect_box(&painter, bar_rect, Stroke::new(1.0_f32, BORDER_LINE));
+    painter.text(Pos2::new(bar_rect.right() + 4.0_f32, bar_rect.top()), Align2::LEFT_TOP, "1.0", FontId::monospace(8.0_f32), TEXT_DIM);
+    painter.text(Pos2::new(bar_rect.right() + 4.0_f32, bar_rect.center().y), Align2::LEFT_CENTER, "0.5", FontId::monospace(8.0_f32), TEXT_DIM);
+    painter.text(Pos2::new(bar_rect.right() + 4.0_f32, bar_rect.bottom()), Align2::LEFT_BOTTOM, "0.0", FontId::monospace(8.0_f32), TEXT_DIM);
 }
 
 pub struct PlotSeries<'a> {
@@ -779,7 +993,7 @@ pub fn draw_scientific_plot(
     height: f32,
 ) {
     let width = ui.available_width().max(320.0_f32);
-    let (rect, _resp) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
     let painter = ui.painter_at(rect);
 
     painter.rect_filled(rect, 6.0_f32, BG_PANEL);
@@ -864,6 +1078,38 @@ pub fn draw_scientific_plot(
             s.color,
         );
         legend_x = swatch_x - 14.0_f32;
+    }
+
+    // Hover crosshair & coordinate readout inside `plot_rect`
+    if let Some(hp) = resp.hover_pos() {
+        if plot_rect.contains(hp) {
+            let fx = ((hp.x - plot_rect.left()) / plot_rect.width().max(1.0_f32)).clamp(0.0_f32, 1.0_f32) as f64;
+            let fy = ((plot_rect.bottom() - hp.y) / plot_rect.height().max(1.0_f32)).clamp(0.0_f32, 1.0_f32) as f64;
+            let x_val = x_range.0 + fx * dx;
+            let y_val = y_range.0 + fy * dy;
+            let cross_stroke = Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(148, 164, 186, 135));
+            painter.line_segment([Pos2::new(hp.x, plot_rect.top()), Pos2::new(hp.x, plot_rect.bottom())], cross_stroke);
+            painter.line_segment([Pos2::new(plot_rect.left(), hp.y), Pos2::new(plot_rect.right(), hp.y)], cross_stroke);
+
+            let nearest = series.first().and_then(|s| {
+                s.points
+                    .iter()
+                    .min_by(|a, b| (a.0 - x_val).abs().total_cmp(&(b.0 - x_val).abs()))
+                    .copied()
+            });
+            let readout = if let Some((nx, ny)) = nearest {
+                format!("cursor=({:.3}, {:.3}) | nearest=({:.3}, {:.3})", x_val, y_val, nx, ny)
+            } else {
+                format!("x = {:.3}, y = {:.3}", x_val, y_val)
+            };
+            let badge_w = ((readout.len() as f32) * 6.0_f32 + 12.0_f32).min(plot_rect.width() - 8.0_f32);
+            let bx = (hp.x + 10.0_f32).min(plot_rect.right() - badge_w - 4.0_f32).max(plot_rect.left() + 4.0_f32);
+            let by = (hp.y - 22.0_f32).max(plot_rect.top() + 4.0_f32).min(plot_rect.bottom() - 20.0_f32);
+            let b_rect = Rect::from_min_size(Pos2::new(bx, by), Vec2::new(badge_w, 17.0_f32));
+            painter.rect_filled(b_rect, 3.0_f32, Color32::from_rgba_unmultiplied(10, 14, 22, 225));
+            stroke_rect_box(&painter, b_rect, Stroke::new(1.0_f32, ACCENT_CYAN));
+            painter.text(Pos2::new(bx + 6.0_f32, by + 8.5_f32), Align2::LEFT_CENTER, readout, FontId::monospace(9.5_f32), TEXT_MAIN);
+        }
     }
 }
 

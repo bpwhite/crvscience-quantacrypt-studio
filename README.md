@@ -2,56 +2,83 @@
 
 ![QuantaCrypt Studio — 4-Qubit GHZ Circuit & Born-Rule Shot Observatory](validation/headless_screenshot.png)
 
-**QuantaCrypt Studio (`v2.2.0`)** is a zero-unsafe (`#![forbid(unsafe_code)]`), native safe-Rust **23-module passive stochastic quantum & cryptography observatory** (`eframe` / `egui` `0.31`) and headless CLI (`clap`) spanning foundational wave-particle experiments through fault-tolerant surface codes, variational quantum eigensolvers, QAOA, and NIST post-quantum cryptography.
+**QuantaCrypt Studio (`v2.2.0`)** is a zero-unsafe (`#![forbid(unsafe_code)]` library, `#![deny(unsafe_code)]` desktop shell outside Windows console attach), native safe-Rust **23-module passive stochastic quantum and post-quantum cryptography observatory** (`eframe` / `egui` `0.31`) paired with a headless CLI (`clap`), SQLite WAL workset persistence (`rusqlite`), OpenQASM 2.0 circuit simulator, and interactive custom renderers.
 
-## 23 Autonomous Stochastic Modules Across 6 Groups
+- **License**: GNU General Public License v3.0 or later (`GPL-3.0-or-later`)
+- **Zenodo DOI**: [`10.5281/zenodo.24244089`](https://doi.org/10.5281/zenodo.24244089) (`APP-PREPRINT-16`)
+- **Web Hub**: [https://crvscience.com/apps](https://crvscience.com/apps)
 
-### 0. Basic Quantum Mechanics & Wave-Particle Intro
-- **`I1` — Double-Slit Single-Quantum Build-Up & Which-Path Decoherence** ([Bach et al. 2013](https://arxiv.org/abs/1210.6243))
-- **`I2` — Mach-Zehnder Interferometer & Interaction-Free Detection** ([Elitzur & Vaidman 1993](https://arxiv.org/abs/hep-th/9305002))
-- **`I3` — Stern-Gerlach Sequential Spin-1/2 Beam (`Z -> theta -> Z`)** ([Gerlach & Stern 1922](https://arxiv.org/abs/2301.11343))
-- **`I4` — Malus Polarizer Stack & Quantum Zeno Effect** ([Misra & Sudarshan 1977](https://pubs.aip.org/aip/jmp/article/18/4/756/225634/The-Zeno-s-paradox-in-quantum-theory))
+## Highlights Across the 4 Upgrade Pillars
 
-### 1. Qubit Foundations & Open-System Trajectories
-- **`Q1` — Rabi Precession & Quantum-Jump Bloch Cloud** ([Feynman, Vernon & Hellwarth 1957](https://pubs.aip.org/aip/jap/article/28/1/49/161271/Geometrical-Representation-of-the-Schrodinger))
-- **`Q2` — Multi-Qubit Stochastic Gate-Noise & Shot Stream** ([Cross et al. 2017, OpenQASM 2.0](https://arxiv.org/abs/1707.03429))
-- **`Q3` — Continuous EPR Teleportation Photon-Pair Stream** ([Bennett et al. 1993](https://link.aps.org/doi/10.1103/PhysRevLett.70.1895))
-- **`Q4` — Lindblad Walker Cloud & 3-Qubit Stabilizer Loop** ([Shor 1995](https://link.aps.org/doi/10.1103/PhysRevA.52.R2493))
-- **`Q5` — Entanglement Swapping & Linear-Optical Quantum Repeater** ([Zukowski et al. 1993](https://link.aps.org/doi/10.1103/PhysRevLett.71.4287); [Bouwmeester et al. 1997](https://arxiv.org/abs/1901.11004))
+1. **Usability & Curriculum Navigation**:
+   - Keyboard navigation guarded by `!ctx.wants_keyboard_input()`: `Left`/`Right` cycle through all 23 modules, `H` toggles Observatory Hub vs. Module Workspace, `Space` pauses/resumes, `R` resets the stochastic stream, `F1` opens shortcuts/citations, `F5`/`F9` quick-save/load SQLite slots, and `Esc` dismisses open modals before returning to the Hub.
+   - Live module search/filter in both the **Simulations** menu and **Observatory Hub**, top-bar quick group filter pills (`I`, `Q`, `D`, `K`, `C`, `A`), equation/unit hover tooltips across parameter sliders, and 1-click regime presets across key modules (`I1`, `Q4`, `K1`, `C3`, `C4`, `A1`, `A2`, `A3`, `A4`).
+2. **Scientific & Cryptographic Rigor**:
+   - **QAOA Max-Cut (`A3`)**: Full `11`-bin cut histogram (`0..=10`) so optimal `C_max = 10` samples (e.g., bitmask `0b0101_1010`) record cleanly in bin `10` without truncation.
+   - **FIPS 203 ML-KEM (`C3`)**: Exact rejection sampling for uniform `R_q` (`q = 3329`), distinct FIPS 203 Table 2 `(eta_1 = 3, eta_2 = 2)` parameters on `ML-KEM-512`, `Compress_{d_u,d_v}` / `Decompress_{d_u,d_v}` ciphertext quantization noise, and Fujisaki-Okamoto (FO) re-encapsulation / implicit rejection telemetry.
+   - **FIPS 204 ML-DSA (`C4`)**: Signed sparse challenge vector `c in {-1, 0, +1}^n` of exact Hamming weight `tau` via negacyclic convolution `z = y + c*s` in both the CLI lab and live arena.
+   - **BB84 QKD (`K1`)**: Explicit Cascade parity leakage `leaked_parity_bits` + phase entropy subtraction during Toeplitz universal-2 privacy amplification (`final_amplified_key_bits <= sifted_len - leaked_parity_bits`).
+3. **2D / 3D Canvas Fidelity**:
+   - **3D Bloch Sphere Cloud**: True camera depth sorting back-to-front, solid front / dimmed-dashed back great circles, directional 3D vector arrowheads, and double-click camera reset.
+   - **Density-Matrix Heatmap**: Right-margin circular phase colorwheel (`arg(rho_ij)`) paired with a `0.0 -> 1.0` magnitude bar (`|rho_ij|`).
+   - **Rotated Surface-Code Lattice**: Boundary weight-2 half-plaquettes (`Z` top/bottom, `X` left/right) for complete `n^2 - 1` commuting stabilizers (`[[9,1,3]]`, `[[25,1,5]]`, `[[49,1,7]]`) plus compact legend.
+   - **Rydberg QAOA Graph & Scientific Plots**: Live cut counter + spin/cut legend on QAOA graphs, and interactive crosshair + coordinate readout overlay inside scientific time-series plots.
 
-### 2. High-Dimensional Optical Qudits
-- **`D1` — High-Dimensional Qudit (`d = 2..8`) Waveguide Stream** ([Wang et al. 2020](https://www.frontiersin.org/journals/physics/articles/10.3389/fphy.2020.589504/full))
-- **`D2` — `d`-Dimensional Weyl-Heisenberg Qudit Teleportation** ([Luo et al. 2019](https://link.aps.org/doi/10.1103/PhysRevLett.123.070505))
+## Controls & Hotkeys
 
-### 3. Photonic Quantum Key Distribution & Bell Security
-- **`K1` — Live BB84 Photonic Fiber Stream** ([Bennett & Brassard 1984](https://arxiv.org/abs/2003.06557))
-- **`K2` — Live E91 Entangled Singlet Stream & CHSH Bell Drift** ([Ekert 1991](https://link.aps.org/doi/10.1103/PhysRevLett.67.661))
-- **`K3` — Live B92 Non-Orthogonal Stream & POVM Sorter** ([Bennett 1992](https://link.aps.org/doi/10.1103/PhysRevLett.68.3121))
+| Input | Action | Notes |
+| --- | --- | --- |
+| `Left` / `Right` | Previous / Next module | Cycles across all 23 modules in order |
+| `H` | Toggle Observatory Hub | Switches Hub <-> Module Workspace |
+| `Space` | Play / Pause stream | Guards active text inputs (`!wants_keyboard_input`) |
+| `R` | Reset live stochastic stream | Restores deterministic seed state for active module |
+| `F1` | Toggle Shortcuts & Citations | Lists all 23 primary literature DOIs |
+| `F5` / `F9` | Quick Save / Quick Load | Uses bundled/selected SQLite WAL workset DB |
+| `Esc` | Dismiss modal / Return to Hub | Closes topmost modal first before exiting workspace |
+| Bloch Drag / Dbl-Click | Orbit 3D Bloch sphere / Reset camera | Restores `(yaw = 0.62, pitch = 0.34)` on double-click |
+| Plot / Heatmap Hover | Inspect coordinates or complex `rho[r,c]` | Displays cursor/nearest trace values or amplitude/phase |
 
-### 4. Quantum Cryptanalysis & NIST Post-Quantum Cryptography
-- **`C1` — Shot-by-Shot Shor Inverse-QFT Resonance Stream** ([Shor 1997](https://epubs.siam.org/doi/10.1137/S0097539795293172))
-- **`C2` — Continuous Grover Rotor & Amplitude-Amplification Wave** ([Grover 1996](https://arxiv.org/abs/quant-ph/9605043))
-- **`C3` — Live NIST FIPS 203 ML-KEM Encapsulation & Lattice Cloud** ([NIST FIPS 203](https://csrc.nist.gov/pubs/fips/203/final))
-- **`C4` — FIPS 204 Rejection-Sampling Fountain & Merkle Stream** ([NIST FIPS 204](https://csrc.nist.gov/pubs/fips/204/final); [NIST SP 800-208](https://csrc.nist.gov/pubs/sp/800/208/final))
+## CLI Reference
 
-### 5. Advanced Fault-Tolerant & Variational Computing
-- **`A1` — 2D Rotated Surface Code (`d = 3, 5, 7`) & Threshold Crossover** ([Fowler et al. 2012](https://link.aps.org/doi/10.1103/PhysRevA.86.032324))
-- **`A2` — Variational Quantum Eigensolver (`VQE`) Molecular `H2` Trajectory** ([Peruzzo et al. 2014](https://pmc.ncbi.nlm.nih.gov/articles/PMC4124861/))
-- **`A3` — QAOA Combinatorial Max-Cut & Neutral-Atom Rydberg Graph** ([Farhi, Goldstone & Gutmann 2014](https://arxiv.org/abs/1411.4028))
-- **`A4` — Bravyi-Kitaev `15-to-1` Magic-State Distillation Factory** ([Bravyi & Kitaev 2005](https://link.aps.org/doi/10.1103/PhysRevA.71.022316))
-- **`A5` — Gottesman-Chuang Magic-State `T`-Gate Teleportation** ([Gottesman & Chuang 1999](https://arxiv.org/abs/quant-ph/9908010))
+| Command / Flag | Description | Default |
+| --- | --- | --- |
+| `--skip-hub` | Launch directly into active module workspace | `false` |
+| `--module <SLUG>` | Start directly on module slug (e.g., `a1-surface-code`, `c3-ml-kem-lattice`) | Hub |
+| `--db <PATH>` | Path to SQLite WAL workset save database | `quantacrypt_worksets.sqlite3` |
+| `--headless-screenshot <PNG>` | Render 1600x1000 offscreen GPU PNG screenshot and exit | Off |
+| `--screenshot-view <1..4>` | Headless preset (`1` `I1`, `2` `K1`, `3` `C3`, `4` `Q2`) | `1` |
+| `run-qasm <PATH> [--shots 1024] [--seed 2026]` | Parse and run OpenQASM 2.0 circuit headlessly | — |
+| `simulate-qkd [--protocol bb84\|e91\|b92] [--pulses 2048] [--eve 0.0] [--seed 2026]` | Headless QKD simulation & Cascade / Toeplitz report | — |
+| `shor-factor [--modulus 35] [--base 2] [--counting-qubits 8]` | Coherent inverse-QFT period finding & factorization | — |
+| `grover-search [--key-bits 8] [--secret-key 173] [--iterations]` | Amplitude amplification search probability report | — |
+| `ml-kem-demo [--profile ped16\|512\|768\|1024] [--eta 2] [--seed 2026]` | FIPS 203 ML-KEM encapsulation & decryption noise check | — |
+| `qudit-bench [--dimension 4]` | High-dimensional qudit (`d = 2..8`) Weyl algebra benchmark | — |
 
-## Build & Run
+## 23 Autonomous Modules Across 6 Groups
 
-```bash
-cargo test
+- **I1–I4 (Basic Quantum Intro)**: Double-Slit build-up, Mach-Zehnder interaction-free measurement, Stern-Gerlach `Z -> theta -> Z` spin revival, Malus Quantum Zeno suppression.
+- **Q1–Q5 (Foundations & Open Systems)**: Rabi + Bloch quantum jumps, OpenQASM 2.0 multi-qubit circuits & density heatmaps, EPR quantum teleportation, Lindblad Kraus channels + 3-qubit QEC, multi-hop entanglement swapping repeaters.
+- **D1–D2 (High-Dimensional Qudits)**: Weyl-Heisenberg shift/clock commutator (`d = 2..8`), generalized `d`-dimensional teleportation fidelity vs. classical threshold.
+- **K1–K3 (Photonic QKD)**: BB84 Cascade + Toeplitz privacy amplification, E91 CHSH Bell drift `|S|`, B92 non-orthogonal unambiguous state discrimination.
+- **C1–C4 (Cryptanalysis & NIST PQC)**: Shor inverse-QFT factoring, Grover rotor amplitude search, FIPS 203 ML-KEM ring LWE & FO rejection, FIPS 204 ML-DSA Fiat-Shamir with Aborts + Merkle-Lamport signatures.
+- **A1–A5 (Fault-Tolerant & Variational)**: Rotated surface code `d in {3,5,7}` threshold crossover, VQE H2 SPSA trajectory, Rydberg QAOA Max-Cut (`C_max = 10`), Bravyi-Kitaev `15-to-1` magic-state distillation, chained Gottesman-Chuang `T`-gate teleportation.
+
+## Build & Validation
+
+```powershell
+$env:CARGO_BUILD_JOBS='4'; cargo test --all-targets
 cargo run --release
-cargo run --release -- --module i1-double-slit
-cargo run --release -- --module a1-surface-code
 ```
 
-## Bundled Documentation & Browser Observatory
+Observed `--all-targets` verification (`cargo test --all-targets`):
+- `src\lib.rs`: `0 passed; 0 failed`
+- `src\main.rs`: `0 passed; 0 failed`
+- `tests\integration_suite.rs`: `24 passed; 0 failed` (zero warnings; verifies NIST FIPS 180-4 SHA-256 vectors, OpenQASM roundtrips/bounds, density-matrix reduced entropy, high-dim qudit Weyl residuals, Shor/Grover convergence, A3 Max-Cut bin 10, BB84 leaked-parity privacy amplification bound, ML-KEM-512 `(eta_1 = 3, eta_2 = 2)` compression noise + FO implicit rejection, and headless GUI hotkey navigation/filtering).
 
-- **Illustrated User & Physics Guide (PDF)**: `docs/QuantaCrypt_Studio_v2_2_0_Guide.pdf`
+## Documentation
+
+- [User Guide](docs/USER_GUIDE.md)
+- [Scientific & Cryptographic Methods](docs/SCIENTIFIC_METHODS.md)
+- **Illustrated PDF Guide**: `docs/QuantaCrypt_Studio_v2_2_0_Guide.pdf`
 - **Standalone 60 FPS Browser Observatory**: `web/quantacrypt_studio_preview.html`
-- **OpenQASM 2.0 Example Circuits**: `examples/*.qasm`
+- **OpenQASM 2.0 Examples**: `examples/*.qasm`

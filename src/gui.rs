@@ -64,6 +64,8 @@ pub struct QuantaCryptApp {
     pub q2_angle_rad: f64,
     pub q2_show_reduced_rho: bool,
     pub q2_qasm_error: Option<String>,
+    pub module_search: String,
+    pub hub_group_filter: Option<CurriculumGroup>,
 }
 
 impl QuantaCryptApp {
@@ -71,7 +73,7 @@ impl QuantaCryptApp {
         let (repo, status_banner) = match WorksetRepository::open_file(&db_path) {
             Ok(r) => (
                 Some(r),
-                "Passive Stochastic Stream Active (23 Modules) — Space: Play/Pause | R: Reset | F5/F9: Save/Load.".to_string(),
+                "Passive Stochastic Stream Active (23 Modules) — Left/Right: Module | H: Hub | Space: Play/Pause | R: Reset | F5/F9: Save/Load.".to_string(),
             ),
             Err(e) => (
                 None,
@@ -113,6 +115,43 @@ impl QuantaCryptApp {
             q2_angle_rad: std::f64::consts::FRAC_PI_2,
             q2_show_reduced_rho: false,
             q2_qasm_error: None,
+            module_search: String::new(),
+            hub_group_filter: None,
+        }
+    }
+
+    pub fn module_matches_query(m: ModuleId, query: &str) -> bool {
+        let q = query.trim().to_ascii_lowercase();
+        if q.is_empty() {
+            return true;
+        }
+        m.code().to_ascii_lowercase().contains(&q)
+            || m.title().to_ascii_lowercase().contains(&q)
+            || m.slug().to_ascii_lowercase().contains(&q)
+            || m.summary().to_ascii_lowercase().contains(&q)
+    }
+
+    pub fn cycle_module(&mut self, delta: isize) {
+        let n = ModuleId::ALL.len() as isize;
+        let cur = ModuleId::ALL
+            .iter()
+            .position(|&x| x == self.ws.active_module)
+            .unwrap_or(0) as isize;
+        let next_idx = (cur + delta).rem_euclid(n) as usize;
+        let next_m = ModuleId::ALL[next_idx];
+        self.ws.active_module = next_m;
+        self.arena.reset_stream(self.ws.seed, next_m);
+        self.stage = AppStage::ModuleWorkspace;
+    }
+
+    fn group_short_code(grp: CurriculumGroup) -> &'static str {
+        match grp {
+            CurriculumGroup::BasicQuantumIntro => "I",
+            CurriculumGroup::FoundationsOpenSystems => "Q",
+            CurriculumGroup::HighDimensionalQudits => "D",
+            CurriculumGroup::QuantumKeyDistribution => "K",
+            CurriculumGroup::CryptanalysisAndPqc => "C",
+            CurriculumGroup::AdvancedQuantumComputing => "A",
         }
     }
 
@@ -211,23 +250,40 @@ impl QuantaCryptApp {
             egui::menu::bar(ui, |ui| {
                 ui.label(RichText::new("QuantaCrypt Studio v2.2").strong().color(Color32::from_rgb(56, 189, 248)));
                 ui.separator();
-                if ui.selectable_label(self.stage == AppStage::CurriculumHub, "Observatory Hub (23)").clicked() {
+                if ui.selectable_label(self.stage == AppStage::CurriculumHub && self.hub_group_filter.is_none(), "Observatory Hub (23)").on_hover_text("Open 23-Module Observatory Hub (Hotkey: H or Esc)").clicked() {
+                    self.hub_group_filter = None;
                     self.stage = AppStage::CurriculumHub;
                 }
-                if ui.selectable_label(self.stage == AppStage::ModuleWorkspace && self.ws.active_module == ModuleId::Q3Teleportation, "Q3 Teleport").clicked() {
-                    self.ws.active_module = ModuleId::Q3Teleportation;
-                    self.arena.reset_stream(self.ws.seed, ModuleId::Q3Teleportation);
-                    self.stage = AppStage::ModuleWorkspace;
-                }
-                if ui.selectable_label(self.stage == AppStage::ModuleWorkspace && self.ws.active_module == ModuleId::Q5EntanglementSwapping, "Q5 Swap").clicked() {
-                    self.ws.active_module = ModuleId::Q5EntanglementSwapping;
-                    self.arena.reset_stream(self.ws.seed, ModuleId::Q5EntanglementSwapping);
-                    self.stage = AppStage::ModuleWorkspace;
+                for grp in CurriculumGroup::ALL {
+                    let active = (self.stage == AppStage::CurriculumHub && self.hub_group_filter == Some(grp))
+                        || (self.stage == AppStage::ModuleWorkspace && self.ws.active_module.group() == grp);
+                    let code = Self::group_short_code(grp);
+                    if ui.selectable_label(active, code).on_hover_text(format!("Filter Hub to {}", grp.title())).clicked() {
+                        self.hub_group_filter = Some(grp);
+                        self.stage = AppStage::CurriculumHub;
+                    }
                 }
                 ui.menu_button("Simulations", |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Search:");
+                        ui.add(egui::TextEdit::singleline(&mut self.module_search).desired_width(150.0).hint_text("code, title, topic..."));
+                        if !self.module_search.is_empty() && ui.small_button("x").clicked() {
+                            self.module_search.clear();
+                        }
+                    });
+                    ui.separator();
+                    let mut any_hit = false;
                     for grp in CurriculumGroup::ALL {
+                        let hits: Vec<ModuleId> = ModuleId::ALL
+                            .into_iter()
+                            .filter(|&m| m.group() == grp && Self::module_matches_query(m, &self.module_search))
+                            .collect();
+                        if hits.is_empty() {
+                            continue;
+                        }
+                        any_hit = true;
                         ui.label(RichText::new(grp.title()).strong());
-                        for m in ModuleId::ALL.into_iter().filter(|m| m.group() == grp) {
+                        for m in hits {
                             if ui.button(format!("[{}] {}", m.code(), m.title())).clicked() {
                                 self.ws.active_module = m;
                                 self.arena.reset_stream(self.ws.seed, m);
@@ -236,6 +292,9 @@ impl QuantaCryptApp {
                             }
                         }
                         ui.separator();
+                    }
+                    if !any_hit {
+                        ui.label("No modules match filter.");
                     }
                 });
                 ui.separator();
@@ -270,12 +329,42 @@ impl QuantaCryptApp {
             ui.add_space(6.0);
             ui.heading("QuantaCrypt Studio v2.2 — 23-Module Passive Stochastic Quantum & Cryptography Observatory");
             ui.label("From foundational double-slit/Stern-Gerlach/Zeno experiments to multi-qubit circuits, qudits, QKD, post-quantum cryptography, and fault-tolerant surface codes, VQE, QAOA, and magic-state factories.");
+            ui.add_space(4.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Filter:");
+                ui.add(egui::TextEdit::singleline(&mut self.module_search).desired_width(210.0).hint_text("Search 23 modules..."));
+                if !self.module_search.is_empty() && ui.small_button("Clear").clicked() {
+                    self.module_search.clear();
+                }
+                ui.separator();
+                if ui.selectable_label(self.hub_group_filter.is_none(), "All (23)").clicked() {
+                    self.hub_group_filter = None;
+                }
+                for grp in CurriculumGroup::ALL {
+                    if ui.selectable_label(self.hub_group_filter == Some(grp), format!("{} Group", Self::group_short_code(grp))).on_hover_text(grp.title()).clicked() {
+                        self.hub_group_filter = Some(grp);
+                    }
+                }
+            });
             let mut chosen = None;
+            let mut any_shown = false;
             for grp in CurriculumGroup::ALL {
+                if let Some(f_grp) = self.hub_group_filter {
+                    if f_grp != grp {
+                        continue;
+                    }
+                }
+                let mods: Vec<ModuleId> = ModuleId::ALL
+                    .into_iter()
+                    .filter(|&m| m.group() == grp && Self::module_matches_query(m, &self.module_search))
+                    .collect();
+                if mods.is_empty() {
+                    continue;
+                }
+                any_shown = true;
                 ui.separator();
                 ui.label(RichText::new(grp.title()).size(15.5).strong().color(Color32::from_rgb(167, 139, 250)));
                 egui::Grid::new(format!("hub_{:?}", grp)).num_columns(2).spacing([14.0, 10.0]).striped(true).show(ui, |ui| {
-                    let mods: Vec<ModuleId> = ModuleId::ALL.into_iter().filter(|m| m.group() == grp).collect();
                     for (i, m) in mods.iter().enumerate() {
                         ui.vertical(|ui| {
                             ui.horizontal(|ui| {
@@ -290,6 +379,10 @@ impl QuantaCryptApp {
                     }
                     if mods.len() % 2 == 1 { ui.label(""); ui.end_row(); }
                 });
+            }
+            if !any_shown {
+                ui.separator();
+                ui.label("No modules matched the active search / group filter.");
             }
             if let Some(m) = chosen {
                 self.ws.active_module = m;
@@ -311,35 +404,52 @@ impl QuantaCryptApp {
 
             match m {
                 ModuleId::I1DoubleSlit => {
-                    if ui.add(egui::Slider::new(&mut self.ws.i1_slit_sep, 2.0..=8.5).text("Slit Separation d")).changed()
-                        || ui.add(egui::Slider::new(&mut self.ws.i1_which_path, 0.0..=1.0).text("Which-Path Detector")).changed()
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.small_button("Clean Fringes (D=0)").clicked() {
+                            self.ws.i1_slit_sep = 4.5;
+                            self.ws.i1_which_path = 0.0;
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                        if ui.small_button("Partial Path (D=0.6)").clicked() {
+                            self.ws.i1_slit_sep = 5.0;
+                            self.ws.i1_which_path = 0.6;
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                        if ui.small_button("Erased (D=1)").clicked() {
+                            self.ws.i1_slit_sep = 4.5;
+                            self.ws.i1_which_path = 1.0;
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                    });
+                    if ui.add(egui::Slider::new(&mut self.ws.i1_slit_sep, 2.0..=8.5).text("Slit Separation d")).on_hover_text("Slit center spacing d (in units of wavelength lambda); fringe spacing ~ lambda*L/d").changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.i1_which_path, 0.0..=1.0).text("Which-Path Detector")).on_hover_text("Englert-Greenberger duality D^2 + V^2 <= 1; V = sqrt(1 - D^2)").changed()
                     {
                         self.arena.reset_stream(self.ws.seed, m);
                     }
                 }
                 ModuleId::I2MachZehnder => {
-                    if ui.add(egui::Slider::new(&mut self.ws.i2_phase, 0.0..=(2.0 * PI)).text("Arm Phase phi")).changed()
-                        || ui.checkbox(&mut self.ws.i2_arm_blocker, "Insert Lower-Arm Bomb/Blocker").changed()
+                    if ui.add(egui::Slider::new(&mut self.ws.i2_phase, 0.0..=(2.0 * PI)).text("Arm Phase phi")).on_hover_text("Phase shift phi (rad); P(D1) = cos^2(phi/2), P(D2) = sin^2(phi/2) when unblocked").changed()
+                        || ui.checkbox(&mut self.ws.i2_arm_blocker, "Insert Lower-Arm Bomb/Blocker").on_hover_text("Elitzur-Vaidman interaction-free detection: 25% dark-port D2 alert with 0 photon hits").changed()
                     {
                         self.arena.i2_counts = [0; 3];
                     }
                 }
                 ModuleId::I3SternGerlach => {
-                    if ui.checkbox(&mut self.ws.i3_insert_mid_filter, "Insert Middle SG2(theta) Filter").changed()
-                        || ui.add(egui::Slider::new(&mut self.ws.i3_mid_angle_deg, 0.0..=180.0).text("SG2 Angle theta (deg)")).changed()
+                    if ui.checkbox(&mut self.ws.i3_insert_mid_filter, "Insert Middle SG2(theta) Filter").on_hover_text("Non-commuting [S_z, S_theta] analyzer regenerates |-Z> at SG3").changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.i3_mid_angle_deg, 0.0..=180.0).text("SG2 Angle theta (deg)")).on_hover_text("P(+theta|+Z) = cos^2(theta/2); Malus spin revival probability at theta = 90 deg is 25%").changed()
                     {
                         self.arena.i3_counts = [0; 3];
                     }
                 }
                 ModuleId::I4QuantumZeno => {
-                    if ui.add(egui::Slider::new(&mut self.ws.i4_stages_n, 1..=32).text("Polarizer Stages N")).changed() {
+                    if ui.add(egui::Slider::new(&mut self.ws.i4_stages_n, 1..=32).text("Polarizer Stages N")).on_hover_text("Repeated N projective measurements suppress rotation decay: P_surv = cos^(2N)(pi / 2N)").changed() {
                         self.arena.i4_transmitted = 0;
                         self.arena.i4_absorbed = 0;
                     }
                 }
                 ModuleId::Q1BlochSingleQubit => {
-                    ui.add(egui::Slider::new(&mut self.ws.q1_theta, 0.1..=PI).text("Rabi Drive Strength"));
-                    ui.add(egui::Slider::new(&mut self.ws.q1_phi, -PI..=PI).text("Drive Axis Azimuth"));
+                    ui.add(egui::Slider::new(&mut self.ws.q1_theta, 0.1..=PI).text("Rabi Drive Strength")).on_hover_text("Rabi frequency Omega (rad/s) rotating statevector around drive axis").changed();
+                    ui.add(egui::Slider::new(&mut self.ws.q1_phi, -PI..=PI).text("Drive Axis Azimuth")).on_hover_text("Equatorial Hamiltonian drive azimuth phi in (-pi, pi) rad").changed();
                 }
                 ModuleId::Q2CircuitEntanglement => {
                     ui.label(RichText::new("Circuit Presets").strong());
@@ -523,11 +633,28 @@ impl QuantaCryptApp {
                     });
                 }
                 ModuleId::Q3Teleportation => {
-                    ui.add(egui::Slider::new(&mut self.ws.q3_theta, 0.0..=PI).text("Payload theta"));
-                    ui.add(egui::Slider::new(&mut self.ws.q3_phi, -PI..=PI).text("Payload phi"));
-                    ui.add(egui::Slider::new(&mut self.ws.q3_depol_p, 0.0..=0.50).text("EPR Channel Noise p"));
+                    ui.add(egui::Slider::new(&mut self.ws.q3_theta, 0.0..=PI).text("Payload theta")).on_hover_text("Polar angle theta in [0, pi] rad of |psi> = cos(theta/2)|0> + e^(i*phi)sin(theta/2)|1>");
+                    ui.add(egui::Slider::new(&mut self.ws.q3_phi, -PI..=PI).text("Payload phi")).on_hover_text("Relative phase phi in [-pi, pi] rad of teleported state |psi>");
+                    ui.add(egui::Slider::new(&mut self.ws.q3_depol_p, 0.0..=0.50).text("EPR Channel Noise p")).on_hover_text("Bell-pair depolarizing rate p; Werner fidelity F = 1 - p/2 (entangled iff p < 2/3)");
                 }
                 ModuleId::Q4OpenSystemsQec => {
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.small_button("Gentle").clicked() {
+                            self.ws.q4_noise_kind = NoiseChannelKind::PhaseDampingT2;
+                            self.ws.q4_step_noise = 0.03;
+                            self.ws.q4_physical_p = 0.04;
+                        }
+                        if ui.small_button("Threshold").clicked() {
+                            self.ws.q4_noise_kind = NoiseChannelKind::Depolarizing;
+                            self.ws.q4_step_noise = 0.10;
+                            self.ws.q4_physical_p = 0.20;
+                        }
+                        if ui.small_button("Heavy Bit-Flip").clicked() {
+                            self.ws.q4_noise_kind = NoiseChannelKind::BitFlip;
+                            self.ws.q4_step_noise = 0.18;
+                            self.ws.q4_physical_p = 0.35;
+                        }
+                    });
                     egui::ComboBox::from_label("Kraus Channel")
                         .selected_text(self.ws.q4_noise_kind.label())
                         .show_ui(ui, |ui| {
@@ -535,35 +662,55 @@ impl QuantaCryptApp {
                                 ui.selectable_value(&mut self.ws.q4_noise_kind, k, k.label());
                             }
                         });
-                    ui.add(egui::Slider::new(&mut self.ws.q4_step_noise, 0.01..=0.25).text("Jump Rate"));
-                    ui.add(egui::Slider::new(&mut self.ws.q4_physical_p, 0.01..=0.40).text("QEC Fault Rate p"));
+                    ui.add(egui::Slider::new(&mut self.ws.q4_step_noise, 0.01..=0.25).text("Jump Rate")).on_hover_text("Per-step quantum jump probability gamma_dt; purity decays exponentially with T1/T2");
+                    ui.add(egui::Slider::new(&mut self.ws.q4_physical_p, 0.01..=0.40).text("QEC Fault Rate p")).on_hover_text("Single-qubit error p; 3-qubit code failure P_fail = 3p^2 - 2p^3 < p when p < 0.5");
                 }
                 ModuleId::D1QuditWeylLab => {
-                    if ui.add(egui::Slider::new(&mut self.ws.d1_dimension_d, 2..=8).text("Qudit Dimension d")).changed() {
+                    if ui.add(egui::Slider::new(&mut self.ws.d1_dimension_d, 2..=8).text("Qudit Dimension d")).on_hover_text("Hilbert dimension d; maximally entangled state holds log2(d) ebits, QKD threshold rises with d").changed() {
                         self.arena.d1_coincidences.clear();
                     }
                     let dmax = self.ws.d1_dimension_d.saturating_sub(1);
-                    ui.add(egui::Slider::new(&mut self.ws.d1_shift_a, 0..=dmax).text("Weyl Shift X_d^a"));
+                    ui.add(egui::Slider::new(&mut self.ws.d1_shift_a, 0..=dmax).text("Weyl Shift X_d^a")).on_hover_text("Generalized Pauli shift X_d^a|j> = |(j+a) mod d>; [X_d, Z_d] phase omega = e^(2*pi*i/d)");
                 }
                 ModuleId::K1Bb84Qkd => {
-                    if ui.add(egui::Slider::new(&mut self.ws.k1_eve_rate, 0.0..=1.0).text("Eve Intercept Rate")).changed()
-                        || ui.add(egui::Slider::new(&mut self.ws.k1_channel_noise, 0.0..=0.15).text("Fiber Flip Noise")).changed()
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.small_button("Clean (0% Eve)").clicked() {
+                            self.ws.k1_eve_rate = 0.0;
+                            self.ws.k1_channel_noise = 0.01;
+                            self.arena.k1_sifted_total = 0;
+                            self.arena.k1_sifted_errors = 0;
+                        }
+                        if ui.small_button("Edge (~11%)").clicked() {
+                            self.ws.k1_eve_rate = 0.36;
+                            self.ws.k1_channel_noise = 0.02;
+                            self.arena.k1_sifted_total = 0;
+                            self.arena.k1_sifted_errors = 0;
+                        }
+                        if ui.small_button("Attack (60% Eve)").clicked() {
+                            self.ws.k1_eve_rate = 0.60;
+                            self.ws.k1_channel_noise = 0.01;
+                            self.arena.k1_sifted_total = 0;
+                            self.arena.k1_sifted_errors = 0;
+                        }
+                    });
+                    if ui.add(egui::Slider::new(&mut self.ws.k1_eve_rate, 0.0..=1.0).text("Eve Intercept Rate")).on_hover_text("Fraction p_Eve of pulses measured & resent; induces 0.25*p_Eve QBER (aborts above 11.0%)").changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.k1_channel_noise, 0.0..=0.15).text("Fiber Flip Noise")).on_hover_text("Intrinsic channel bit-flip noise p_ch; Shor-Preskill rate r = max(0, 1 - 2*h2(QBER))").changed()
                     {
                         self.arena.k1_sifted_total = 0;
                         self.arena.k1_sifted_errors = 0;
                     }
                 }
                 ModuleId::K2E91BellChsh => {
-                    if ui.add(egui::Slider::new(&mut self.ws.k2_eve_decoherence, 0.0..=1.0).text("Eve Singlet Probe")).changed()
-                        || ui.add(egui::Slider::new(&mut self.ws.k2_visibility, 0.65..=1.0).text("Pair Visibility")).changed()
+                    if ui.add(egui::Slider::new(&mut self.ws.k2_eve_decoherence, 0.0..=1.0).text("Eve Singlet Probe")).on_hover_text("Decoheres singlet correlation; reduces CHSH |S| = 2*sqrt(2)*V*(1-D) toward classical bound 2").changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.k2_visibility, 0.65..=1.0).text("Pair Visibility")).on_hover_text("Werner pair visibility V; Bell violation |S| > 2 requires V > 1/sqrt(2) ~ 0.707").changed()
                     {
                         self.arena.k2_corr_sum = [[0.0; 3]; 3];
                         self.arena.k2_corr_cnt = [[0; 3]; 3];
                     }
                 }
                 ModuleId::K3B92NonOrthogonal => {
-                    if ui.add(egui::Slider::new(&mut self.ws.k3_angle_deg, 10.0..=80.0).text("Overlap Angle theta")).changed()
-                        || ui.add(egui::Slider::new(&mut self.ws.k3_eve_rate, 0.0..=1.0).text("Eve Attack Rate")).changed()
+                    if ui.add(egui::Slider::new(&mut self.ws.k3_angle_deg, 10.0..=80.0).text("Overlap Angle theta")).on_hover_text("State separation theta (deg); conclusive yield = (1 - cos(theta))/2").changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.k3_eve_rate, 0.0..=1.0).text("Eve Attack Rate")).on_hover_text("Intercept-resend fraction distorting conclusive bit outcomes").changed()
                     {
                         self.arena.k3_conclusive = 0;
                         self.arena.k3_erased = 0;
@@ -580,17 +727,34 @@ impl QuantaCryptApp {
                         }
                     });
                     let n_max = self.ws.c1_modulus_n.saturating_sub(1).max(2);
-                    if ui.add(egui::Slider::new(&mut self.ws.c1_base_a, 2..=n_max).text("Base a")).changed() {
+                    if ui.add(egui::Slider::new(&mut self.ws.c1_base_a, 2..=n_max).text("Base a")).on_hover_text("Coprime base a in Z_N*; QFT finds period r where a^r = 1 mod N (factors gcd(a^(r/2) +/- 1, N))").changed() {
                         self.arena.reset_stream(self.ws.seed, m);
                     }
                 }
                 ModuleId::C2GroverSymmetric => {
-                    ui.add(egui::Slider::new(&mut self.ws.c2_key_bits, 3..=9).text("Key Bits n"));
+                    ui.add(egui::Slider::new(&mut self.ws.c2_key_bits, 3..=9).text("Key Bits n")).on_hover_text("Search space N = 2^n; optimal oracle calls k_opt ~ floor((pi/4)*sqrt(2^n))");
                     let max_k = (1usize << self.ws.c2_key_bits) - 1;
                     self.ws.c2_secret_key = self.ws.c2_secret_key.min(max_k);
-                    ui.add(egui::Slider::new(&mut self.ws.c2_secret_key, 0..=max_k).text("Target Key"));
+                    ui.add(egui::Slider::new(&mut self.ws.c2_secret_key, 0..=max_k).text("Target Key")).on_hover_text("Marked target index k* amplified to >95% probability at k_opt iterations");
                 }
                 ModuleId::C3MlKemLattice => {
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.small_button("ML-KEM-512").clicked() {
+                            self.ws.c3_profile = MlKemProfile::MlKem512;
+                            self.ws.c3_eta = 3;
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                        if ui.small_button("ML-KEM-768").clicked() {
+                            self.ws.c3_profile = MlKemProfile::MlKem768;
+                            self.ws.c3_eta = 2;
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                        if ui.small_button("High Noise (eta=18)").clicked() {
+                            self.ws.c3_profile = MlKemProfile::Pedagogical16;
+                            self.ws.c3_eta = 18;
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                    });
                     egui::ComboBox::from_label("FIPS 203 Profile")
                         .selected_text(self.ws.c3_profile.label())
                         .show_ui(ui, |ui| {
@@ -598,12 +762,32 @@ impl QuantaCryptApp {
                                 ui.selectable_value(&mut self.ws.c3_profile, p, p.label());
                             }
                         });
-                    ui.add(egui::Slider::new(&mut self.ws.c3_eta, 1..=20).text("Binomial Noise eta"));
+                    ui.add(egui::Slider::new(&mut self.ws.c3_eta, 1..=20).text("Binomial Noise eta1")).on_hover_text("CBD_{eta1} width; decryption fails & FO implicit rejection triggers if max |e_dec| > q/4 = 832");
                 }
                 ModuleId::C4PqcSignatures => {
-                    if ui.add(egui::Slider::new(&mut self.ws.c4_gamma1, 32..=384).text("Mask gamma_1")).changed()
-                        || ui.add(egui::Slider::new(&mut self.ws.c4_eta, 1..=6).text("Secret eta")).changed()
-                        || ui.add(egui::Slider::new(&mut self.ws.c4_tau, 2..=14).text("Challenge tau")).changed()
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.small_button("ML-DSA Safe").clicked() {
+                            self.ws.c4_gamma1 = 192;
+                            self.ws.c4_eta = 2;
+                            self.ws.c4_tau = 6;
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                        if ui.small_button("Tight Margin").clicked() {
+                            self.ws.c4_gamma1 = 64;
+                            self.ws.c4_eta = 4;
+                            self.ws.c4_tau = 8;
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                        if ui.small_button("Wide Challenge").clicked() {
+                            self.ws.c4_gamma1 = 256;
+                            self.ws.c4_eta = 2;
+                            self.ws.c4_tau = 12;
+                            self.arena.reset_stream(self.ws.seed, m);
+                        }
+                    });
+                    if ui.add(egui::Slider::new(&mut self.ws.c4_gamma1, 32..=384).text("Mask gamma_1")).on_hover_text("Mask bound gamma_1; signature z = y + c*s accepted iff ||z||_inf < gamma_1 - beta").changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.c4_eta, 1..=6).text("Secret eta")).on_hover_text("Secret key coefficient bound eta; margin beta = tau * eta").changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.c4_tau, 2..=14).text("Challenge tau")).on_hover_text("Hamming weight tau of signed sparse challenge c in {-1, 0, +1}^n").changed()
                     {
                         self.arena.c4_raw_bins.fill(0);
                         self.arena.c4_acc_bins.fill(0);
@@ -612,6 +796,17 @@ impl QuantaCryptApp {
                     }
                 }
                 ModuleId::A1SurfaceCode => {
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.small_button("Sub-Th (0.4%)").clicked() {
+                            self.ws.a1_phys_error = 0.004;
+                        }
+                        if ui.small_button("Crossover (1.0%)").clicked() {
+                            self.ws.a1_phys_error = 0.010;
+                        }
+                        if ui.small_button("Over-Th (1.8%)").clicked() {
+                            self.ws.a1_phys_error = 0.018;
+                        }
+                    });
                     ui.horizontal(|ui| {
                         ui.label("Code Distance:");
                         for d in [3usize, 5, 7] {
@@ -620,23 +815,77 @@ impl QuantaCryptApp {
                             }
                         }
                     });
-                    ui.add(egui::Slider::new(&mut self.ws.a1_phys_error, 0.001..=0.025).text("Physical Error p"));
+                    ui.add(egui::Slider::new(&mut self.ws.a1_phys_error, 0.001..=0.025).text("Physical Error p")).on_hover_text("Circuit physical error p; logical error P_L(d) = 0.08*(p/p_th)^((d+1)/2), p_th ~ 1.0%");
                 }
                 ModuleId::A2VqeHydrogen => {
-                    if ui.add(egui::Slider::new(&mut self.ws.a2_bond_r_angstrom, 0.35..=2.40).text("H-H Bond R (A)")).changed() {
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.small_button("Compressed (0.50 A)").clicked() {
+                            self.ws.a2_bond_r_angstrom = 0.50;
+                            self.arena.a2_theta = 1.10;
+                        }
+                        if ui.small_button("Equilibrium (0.74 A)").clicked() {
+                            self.ws.a2_bond_r_angstrom = 0.74;
+                            self.arena.a2_theta = 1.10;
+                        }
+                        if ui.small_button("Stretched (1.80 A)").clicked() {
+                            self.ws.a2_bond_r_angstrom = 1.80;
+                            self.arena.a2_theta = 1.10;
+                        }
+                    });
+                    if ui.add(egui::Slider::new(&mut self.ws.a2_bond_r_angstrom, 0.35..=2.40).text("H-H Bond R (A)")).on_hover_text("Internuclear H2 separation R (Angstrom); equilibrium FCI minimum at R ~ 0.74 A (-1.137 Ha)").changed() {
                         self.arena.a2_theta = 1.10;
                     }
-                    ui.add(egui::Slider::new(&mut self.ws.a2_shot_noise, 0.002..=0.12).text("Measurement Shot Noise"));
+                    ui.add(egui::Slider::new(&mut self.ws.a2_shot_noise, 0.002..=0.12).text("Measurement Shot Noise")).on_hover_text("Stochastic measurement variance sigma_shot perturbing SPSA energy gradient updates");
                 }
                 ModuleId::A3QaoaMaxCut => {
-                    if ui.add(egui::Slider::new(&mut self.ws.a3_depth_p, 1..=6).text("QAOA Layers p")).changed()
-                        || ui.add(egui::Slider::new(&mut self.ws.a3_drive_gamma, 0.1..=2.0).text("Phase Angle gamma")).changed()
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.small_button("Shallow (p=1)").clicked() {
+                            self.ws.a3_depth_p = 1;
+                            self.ws.a3_drive_gamma = 0.8;
+                            self.arena.a3_cut_bins.fill(0);
+                        }
+                        if ui.small_button("Resonant (p=4)").clicked() {
+                            self.ws.a3_depth_p = 4;
+                            self.ws.a3_drive_gamma = 1.0;
+                            self.arena.a3_cut_bins.fill(0);
+                        }
+                        if ui.small_button("Deep (p=6)").clicked() {
+                            self.ws.a3_depth_p = 6;
+                            self.ws.a3_drive_gamma = 1.0;
+                            self.arena.a3_cut_bins.fill(0);
+                        }
+                    });
+                    if ui.add(egui::Slider::new(&mut self.ws.a3_depth_p, 1..=6).text("QAOA Layers p")).on_hover_text("Alternating mixer/cost depth p; concentrates bitstring probability onto C_max = 10").changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.a3_drive_gamma, 0.1..=2.0).text("Phase Angle gamma")).on_hover_text("Cost unitary angle gamma (rad); peak resonance occurs near gamma = 1.0").changed()
                     {
                         self.arena.a3_cut_bins.fill(0);
                     }
                 }
                 ModuleId::A4MagicStateFactory => {
-                    if ui.add(egui::Slider::new(&mut self.ws.a4_raw_t_error, 0.002..=0.10).text("Raw |T> Error p_in")).changed() {
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.small_button("Clean (1.5%)").clicked() {
+                            self.ws.a4_raw_t_error = 0.015;
+                            self.arena.a4_batches = 0;
+                            self.arena.a4_distilled_ok = 0;
+                            self.arena.a4_distilled_err = 0;
+                            self.arena.a4_aborted_blocks = 0;
+                        }
+                        if ui.small_button("Nominal (4.0%)").clicked() {
+                            self.ws.a4_raw_t_error = 0.040;
+                            self.arena.a4_batches = 0;
+                            self.arena.a4_distilled_ok = 0;
+                            self.arena.a4_distilled_err = 0;
+                            self.arena.a4_aborted_blocks = 0;
+                        }
+                        if ui.small_button("Noisy (9.5%)").clicked() {
+                            self.ws.a4_raw_t_error = 0.095;
+                            self.arena.a4_batches = 0;
+                            self.arena.a4_distilled_ok = 0;
+                            self.arena.a4_distilled_err = 0;
+                            self.arena.a4_aborted_blocks = 0;
+                        }
+                    });
+                    if ui.add(egui::Slider::new(&mut self.ws.a4_raw_t_error, 0.002..=0.10).text("Raw |T> Error p_in")).on_hover_text("Raw injected |T> infidelity p_in; Bravyi-Kitaev 15-to-1 code suppresses error to 35*p_in^3").changed() {
                         self.arena.a4_batches = 0;
                         self.arena.a4_distilled_ok = 0;
                         self.arena.a4_distilled_err = 0;
@@ -644,25 +893,25 @@ impl QuantaCryptApp {
                     }
                 }
                 ModuleId::Q5EntanglementSwapping => {
-                    if ui.add(egui::Slider::new(&mut self.ws.q5_repeater_hops, 1..=4).text("Repeater BSM Hops")).changed()
-                        || ui.add(egui::Slider::new(&mut self.ws.q5_link_depol, 0.0..=0.25).text("Link Depolarizing p")).changed()
-                        || ui.checkbox(&mut self.ws.q5_linear_optics_bsm, "50% Linear-Optical Bell Post-Selection").changed()
+                    if ui.add(egui::Slider::new(&mut self.ws.q5_repeater_hops, 1..=4).text("Repeater BSM Hops")).on_hover_text("Number of intermediate Bell-state swap stations along linear quantum repeater").changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.q5_link_depol, 0.0..=0.25).text("Link Depolarizing p")).on_hover_text("Per-segment Werner noise p; cascaded end-to-end fidelity decays exponentially in hops").changed()
+                        || ui.checkbox(&mut self.ws.q5_linear_optics_bsm, "50% Linear-Optical Bell Post-Selection").on_hover_text("Photonic linear BSMs distinguish 2/4 Bell states -> 0.5^H heralding success rate").changed()
                     {
                         self.arena.reset_stream(self.ws.seed, m);
                     }
                 }
                 ModuleId::D2QuditTeleportation => {
-                    if ui.add(egui::Slider::new(&mut self.ws.d2_dimension_d, 2..=8).text("Qudit Dimension d")).changed()
-                        || ui.add(egui::Slider::new(&mut self.ws.d2_mode_tilt, 0.0..=1.2).text("Payload Mode Tilt")).changed()
-                        || ui.add(egui::Slider::new(&mut self.ws.d2_depol_p, 0.0..=0.90).text("Isotropic Noise p")).changed()
+                    if ui.add(egui::Slider::new(&mut self.ws.d2_dimension_d, 2..=8).text("Qudit Dimension d")).on_hover_text("Higher-dimensional payload alphabet d in 2..=8 with classical Werner bound F = 2/(d+1)").changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.d2_mode_tilt, 0.0..=1.2).text("Payload Mode Tilt")).on_hover_text("Coherent amplitude superposition weighting across basis states |0>..|d-1>").changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.d2_depol_p, 0.0..=0.90).text("Isotropic Noise p")).on_hover_text("Isotropic channel noise p; teleportation fidelity F = 1 - p*(d-1)/d").changed()
                     {
                         self.arena.reset_stream(self.ws.seed, m);
                     }
                 }
                 ModuleId::A5GateTeleportation => {
-                    if ui.add(egui::Slider::new(&mut self.ws.a5_chain_depth, 1..=16).text("Chained T-Gates N")).changed()
-                        || ui.add(egui::Slider::new(&mut self.ws.a5_raw_ancilla_p, 0.002..=0.15).text("Raw |T> Error p_raw")).changed()
-                        || ui.checkbox(&mut self.ws.a5_use_distilled, "Use A4 15-to-1 Distilled |T> Ancillas").changed()
+                    if ui.add(egui::Slider::new(&mut self.ws.a5_chain_depth, 1..=16).text("Chained T-Gates N")).on_hover_text("Sequential non-Clifford T = Rz(pi/4) gate gadgets executed by state injection").changed()
+                        || ui.add(egui::Slider::new(&mut self.ws.a5_raw_ancilla_p, 0.002..=0.15).text("Raw |T> Error p_raw")).on_hover_text("Raw ancilla fault rate p_raw before optional 15-to-1 Bravyi-Kitaev distillation").changed()
+                        || ui.checkbox(&mut self.ws.a5_use_distilled, "Use A4 15-to-1 Distilled |T> Ancillas").on_hover_text("Substitutes distilled magic state p_dist = 35*p_raw^3 instead of raw p_raw").changed()
                     {
                         self.arena.reset_stream(self.ws.seed, m);
                     }
@@ -1019,11 +1268,20 @@ impl QuantaCryptApp {
                 }
                 ModuleId::C3MlKemLattice => {
                     let rep = run_ml_kem_lab(self.ws.c3_profile, self.ws.c3_eta, self.ws.seed);
+                    ui.monospace(format!(
+                        "FIPS 203 (eta1={}, eta2={}, d_u={}, d_v={}) | Compress noise <= {} | FO Re-encap: {}",
+                        rep.noise_eta1,
+                        rep.noise_eta2,
+                        rep.compress_du,
+                        rep.compress_dv,
+                        rep.max_abs_compression_noise,
+                        if rep.fo_reencap_matched { "MATCH (Valid)" } else { "IMPLICIT REJECT" }
+                    ));
                     let t0 = self.arena.c3_max_noise_history.front().map(|x| x.0).unwrap_or(0.0);
                     let t1 = (t0 + 0.1).max(self.arena.sim_time);
                     let n_pts: Vec<(f64, f64)> = self.arena.c3_max_noise_history.iter().copied().collect();
-                    let h_top = (avail * 0.44_f32).max(190.0_f32);
-                    let h_bot = (avail - h_top - 8.0_f32).max(220.0_f32);
+                    let h_top = (avail_sub * 0.44_f32).max(185.0_f32);
+                    let h_bot = (avail_sub - h_top - 8.0_f32).max(210.0_f32);
                     draw_scientific_plot(ui, "Live Max Decapsulation Noise |e_dec| vs. q/4 = 832", "Time t (s)", "Max |e_dec|", (t0, t1), (0.0, 1100.0), &[
                         PlotSeries { label: "Max |e_dec|", points: &n_pts, color: Color32::from_rgb(56, 189, 248) },
                     ], &[PlotHThreshold { y: 832.0, label: "q/4 = 832 Failure Bound", color: Color32::from_rgb(251, 113, 133) }], h_top);
@@ -1083,7 +1341,7 @@ impl QuantaCryptApp {
                         draw_qaoa_ring_graph(ui, self.arena.a3_last_mask, top_sz);
                         let tot = self.arena.a3_cut_bins.iter().sum::<u64>().max(1) as f64;
                         let probs: Vec<f64> = self.arena.a3_cut_bins.iter().map(|&c| (c as f64) / tot).collect();
-                        let labels: Vec<String> = (0..10).map(|c| format!("C={}", c)).collect();
+                        let labels: Vec<String> = (0..=10).map(|c| format!("C={}", c)).collect();
                         draw_amplitude_phase_bars(ui, &labels, &probs, None, top_sz + 28.0_f32, "Sampled Cut-Value Distribution (Max-Cut = 10)");
                     });
                     let t0 = self.arena.a3_ratio_trace.front().map(|x| x.0).unwrap_or(0.0);
@@ -1413,7 +1671,7 @@ impl QuantaCryptApp {
             let mut open = self.show_help_modal;
             egui::Window::new("Shortcuts & Primary Literature Citations (23 Modules)").open(&mut open).resizable(true).default_width(600.0).show(ctx, |ui| {
                 ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
-                    ui.monospace("Space : Play / Pause  |  R : Reset Stream  |  F5/F9 : Save/Load  |  Esc : Hub");
+                    ui.monospace("Left/Right : Prev/Next Module  |  H : Toggle Hub  |  Space : Play/Pause  |  R : Reset  |  F5/F9 : Save/Load  |  Esc : Hub");
                     ui.separator();
                     for m in ModuleId::ALL {
                         let (lbl, url) = m.citation();
@@ -1447,12 +1705,15 @@ impl QuantaCryptApp {
     pub fn ui_step(&mut self, ctx: &egui::Context) {
         ctx.set_visuals(egui::Visuals::dark());
         let wants_kb = ctx.wants_keyboard_input();
-        let (esc_pressed, space_pressed, r_pressed, f1_pressed, f5_pressed, f9_pressed, dt) =
+        let (esc_pressed, space_pressed, r_pressed, h_pressed, left_pressed, right_pressed, f1_pressed, f5_pressed, f9_pressed, dt) =
             ctx.input(|i| {
                 (
                     i.key_pressed(egui::Key::Escape),
                     i.key_pressed(egui::Key::Space),
                     i.key_pressed(egui::Key::R),
+                    i.key_pressed(egui::Key::H),
+                    i.key_pressed(egui::Key::ArrowLeft),
+                    i.key_pressed(egui::Key::ArrowRight),
                     i.key_pressed(egui::Key::F1),
                     i.key_pressed(egui::Key::F5),
                     i.key_pressed(egui::Key::F9),
@@ -1477,6 +1738,18 @@ impl QuantaCryptApp {
             }
             if r_pressed {
                 self.arena.reset_stream(self.ws.seed, self.ws.active_module);
+            }
+            if h_pressed {
+                self.stage = match self.stage {
+                    AppStage::CurriculumHub => AppStage::ModuleWorkspace,
+                    AppStage::ModuleWorkspace => AppStage::CurriculumHub,
+                };
+            }
+            if left_pressed {
+                self.cycle_module(-1);
+            }
+            if right_pressed {
+                self.cycle_module(1);
             }
         }
         if f1_pressed {

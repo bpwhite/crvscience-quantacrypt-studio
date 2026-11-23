@@ -22,13 +22,16 @@ use quantacrypt_studio::density::{
     simulate_decoherence_trajectory, simulate_three_qubit_qec, NoiseChannelKind, QecCodeKind,
 };
 use quantacrypt_studio::icon::app_icon_rgba;
-use quantacrypt_studio::pqc_lattice::{run_ml_kem_lab, run_pqc_signature_lab, MlKemProfile};
+use quantacrypt_studio::pqc_lattice::{
+    run_ml_kem_lab, run_ml_kem_lab_params, run_pqc_signature_lab, sample_sparse_challenge,
+    MlKemProfile, RingPoly, ML_KEM_Q,
+};
 use quantacrypt_studio::qkd::{simulate_b92, simulate_bb84, simulate_e91};
 use quantacrypt_studio::qudit::{run_qudit_lab, QuditPreset, QuditRegister};
-use quantacrypt_studio::rng_sha256::sha256_hex;
+use quantacrypt_studio::rng_sha256::{sha256_hex, DeterministicRng};
 use quantacrypt_studio::statevector::{simulate_teleportation, GateOp, QuantumCircuit, Statevector};
 use quantacrypt_studio::stochastic_sim::{
-    double_slit_analytical_bin_probs, double_slit_intensity, StochasticArena,
+    double_slit_analytical_bin_probs, double_slit_intensity, qaoa_cut_value, StochasticArena,
 };
 use quantacrypt_studio::workset::{PortableWorksetEnvelope, WorksetRepository, WorksetState};
 use std::path::Path;
@@ -445,6 +448,130 @@ fn headless_escape_dismisses_modals_before_returning_to_curriculum_hub() {
 
     run_frame(&ctx, &mut app, vec![esc()]);
     assert_eq!(app.stage, AppStage::CurriculumHub);
+
+    let _ = std::fs::remove_file(&tmp_db);
+}
+
+#[test]
+fn a3_qaoa_maxcut_records_cut_ten_in_eleventh_bin() {
+    assert_eq!(qaoa_cut_value(0b0101_1010), 10);
+    let mut arena = StochasticArena::new(2026, ModuleId::A3QaoaMaxCut);
+    assert_eq!(arena.a3_cut_bins.len(), 11);
+    let recorded = arena.record_a3_cut_sample(0b0101_1010);
+    assert_eq!(recorded, 10);
+    assert_eq!(arena.a3_cut_bins[10], 1);
+    assert_eq!(arena.a3_cut_bins[9], 0);
+
+    let mut ws = WorksetState::default();
+    ws.active_module = ModuleId::A3QaoaMaxCut;
+    ws.a3_depth_p = 6;
+    ws.a3_drive_gamma = 1.0;
+    for _ in 0..160 {
+        arena.step(0.05, &ws);
+    }
+    assert!(
+        arena.a3_cut_bins[10] > 1,
+        "Expected live QAOA simulation to populate optimal bin a3_cut_bins[10], got {:?}",
+        arena.a3_cut_bins
+    );
+}
+
+#[test]
+fn bb84_privacy_amplification_subtracts_leaked_parity_bits() {
+    for &(n, p_eve, p_ch, seed) in &[
+        (256usize, 0.0, 0.0, 11u64),
+        (512, 0.0, 0.01, 22),
+        (1024, 0.0, 0.03, 33),
+        (2048, 0.0, 0.01, 42),
+        (2048, 0.20, 0.02, 55),
+    ] {
+        let rep = simulate_bb84(n, p_eve, p_ch, seed);
+        assert!(
+            rep.final_amplified_key_bits <= rep.sifted_len.saturating_sub(rep.leaked_parity_bits),
+            "Amplified key bits ({}) exceeded sifted - leaked_parity ({} - {} = {}) for n={}, p_eve={}, p_ch={}",
+            rep.final_amplified_key_bits,
+            rep.sifted_len,
+            rep.leaked_parity_bits,
+            rep.sifted_len.saturating_sub(rep.leaked_parity_bits),
+            n,
+            p_eve,
+            p_ch
+        );
+    }
+}
+
+#[test]
+fn ml_kem_512_uses_distinct_eta1_eta2_compression_noise_and_fo_rejection() {
+    let rep = run_ml_kem_lab(MlKemProfile::MlKem512, MlKemProfile::MlKem512.default_eta(), 2026);
+    assert_eq!(rep.noise_eta1, 3);
+    assert_eq!(rep.noise_eta2, 2);
+    assert_eq!(rep.compress_du, 10);
+    assert_eq!(rep.compress_dv, 4);
+    assert!(
+        rep.max_abs_compression_noise > 0,
+        "Expected non-zero Compress_{{d_u,d_v}} rounding noise in ML-KEM-512"
+    );
+    assert!(rep.decapsulation_exact);
+    assert!(rep.fo_reencap_matched);
+    assert!(!rep.fo_implicit_rejection_used);
+
+    // Ciphertext tamper triggers FO implicit rejection cleanly
+    let tampered = run_ml_kem_lab_params(MlKemProfile::MlKem512, 3, 2, true, 2026);
+    assert!(!tampered.fo_reencap_matched);
+    assert!(tampered.fo_implicit_rejection_used);
+    assert!(!tampered.decapsulation_exact);
+    assert_ne!(tampered.sender_shared_secret_hex, tampered.receiver_shared_secret_hex);
+
+    // Rejection-sampled uniform_random stays strictly within [0, q) and ML-DSA challenge has exact weight tau
+    let mut rng = DeterministicRng::from_seed(909);
+    let u = RingPoly::uniform_random(256, &mut rng);
+    assert!(u.coeffs.iter().all(|&c| (0..ML_KEM_Q).contains(&c)));
+    let c = sample_sparse_challenge(16, 8, &mut rng);
+    assert_eq!(c.iter().filter(|&&x| x != 0).count(), 8);
+    assert!(c.iter().all(|&x| x == -1 || x == 0 || x == 1));
+}
+
+#[test]
+fn hotkey_navigation_hub_toggle_and_module_filter() {
+    let tmp_db = std::env::temp_dir().join(format!("quantacrypt_hotkeys_{}.sqlite3", std::process::id()));
+    let _ = std::fs::remove_file(&tmp_db);
+    let ctx = eframe::egui::Context::default();
+    let mut app = QuantaCryptApp::new(tmp_db.clone(), true, Some(ModuleId::I1DoubleSlit));
+    assert_eq!(app.stage, AppStage::ModuleWorkspace);
+    assert_eq!(app.ws.active_module, ModuleId::I1DoubleSlit);
+
+    let key_evt = |key: eframe::egui::Key, pressed: bool| eframe::egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: eframe::egui::Modifiers::NONE,
+    };
+    let step_evts = |ctx: &eframe::egui::Context, app: &mut QuantaCryptApp, events: Vec<eframe::egui::Event>| {
+        let raw = eframe::egui::RawInput {
+            screen_rect: Some(eframe::egui::Rect::from_min_size(
+                eframe::egui::Pos2::ZERO,
+                eframe::egui::vec2(1320.0, 840.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |c| app.ui_step(c));
+    };
+
+    step_evts(&ctx, &mut app, vec![key_evt(eframe::egui::Key::ArrowRight, true), key_evt(eframe::egui::Key::ArrowRight, false)]);
+    assert_eq!(app.ws.active_module, ModuleId::I2MachZehnder);
+
+    step_evts(&ctx, &mut app, vec![key_evt(eframe::egui::Key::ArrowLeft, true), key_evt(eframe::egui::Key::ArrowLeft, false)]);
+    assert_eq!(app.ws.active_module, ModuleId::I1DoubleSlit);
+
+    step_evts(&ctx, &mut app, vec![key_evt(eframe::egui::Key::H, true), key_evt(eframe::egui::Key::H, false)]);
+    assert_eq!(app.stage, AppStage::CurriculumHub);
+    step_evts(&ctx, &mut app, vec![key_evt(eframe::egui::Key::H, true), key_evt(eframe::egui::Key::H, false)]);
+    assert_eq!(app.stage, AppStage::ModuleWorkspace);
+
+    assert!(QuantaCryptApp::module_matches_query(ModuleId::C3MlKemLattice, "ml-kem"));
+    assert!(!QuantaCryptApp::module_matches_query(ModuleId::I1DoubleSlit, "ml-kem"));
 
     let _ = std::fs::remove_file(&tmp_db);
 }

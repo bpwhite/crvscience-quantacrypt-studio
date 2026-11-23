@@ -185,9 +185,17 @@ pub fn simulate_bb84(
         .count();
 
     // Toeplitz universal-2 hash privacy amplification shrinking reconciled bits to secure fraction
+    // Subtract BOTH Cascade parity leakage (`leaked_parity_bits`) and phase-error entropy bound.
     let target_bits = if channel_secure {
-        let raw_budget = ((sifted_len as f64) * shor_preskill_rate).floor() as usize;
-        raw_budget.saturating_sub(16).min(256)
+        let phase_leak = ((sifted_len as f64) * binary_entropy(observed_qber)).ceil() as usize;
+        let cascade_net_budget = sifted_len
+            .saturating_sub(leaked_parity_bits)
+            .saturating_sub(phase_leak)
+            .saturating_sub(16);
+        let sp_budget = ((sifted_len as f64) * shor_preskill_rate)
+            .floor()
+            .max(0.0) as usize;
+        cascade_net_budget.min(sp_budget).min(256)
     } else {
         0
     };

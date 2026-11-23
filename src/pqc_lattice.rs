@@ -66,11 +66,47 @@ impl MlKemProfile {
     }
 
     pub fn default_eta(self) -> usize {
+        self.default_eta1()
+    }
+
+    /// FIPS 203 Table 2 primary secret/randomness CBD parameter `eta_1`.
+    pub fn default_eta1(self) -> usize {
         match self {
             Self::Pedagogical16 | Self::MlKem768 | Self::MlKem1024 => 2,
             Self::MlKem512 => 3,
         }
     }
+
+    /// FIPS 203 Table 2 ciphertext error CBD parameter `eta_2` (`2` across all parameter sets).
+    pub fn default_eta2(self) -> usize {
+        2
+    }
+
+    /// FIPS 203 Table 2 ciphertext compression bit-widths `(d_u, d_v)`.
+    pub fn compression_du_dv(self) -> (u32, u32) {
+        match self {
+            Self::Pedagogical16 | Self::MlKem512 | Self::MlKem768 => (10, 4),
+            Self::MlKem1024 => (11, 5),
+        }
+    }
+}
+
+/// FIPS 203 Section 4.2.1 lossy integer compression `Compress_d(x) = round((2^d / q) * x) mod 2^d`.
+#[inline]
+pub fn compress_q(x: i32, d: u32) -> i32 {
+    let x_mod = x.rem_euclid(ML_KEM_Q) as u64;
+    let q = ML_KEM_Q as u64;
+    let two_d = 1u64 << d;
+    (((x_mod * two_d + (q / 2)) / q) & (two_d - 1)) as i32
+}
+
+/// FIPS 203 Section 4.2.1 integer decompression `Decompress_d(y) = round((q / 2^d) * y)`.
+#[inline]
+pub fn decompress_q(y: i32, d: u32) -> i32 {
+    let mask = (1u64 << d) - 1;
+    let y_u = (y as u64) & mask;
+    let q = ML_KEM_Q as u64;
+    (((y_u * q) + (1u64 << (d - 1))) >> d) as i32
 }
 
 /// Polynomial in negacyclic ring `R_q = Z_q[X]/(X^n + 1)` with coefficients in `0..q`.
@@ -89,10 +125,27 @@ impl RingPoly {
     }
 
     pub fn uniform_random(n: usize, rng: &mut DeterministicRng) -> Self {
-        let coeffs = (0..n)
-            .map(|_| (rng.next_u32() % (ML_KEM_Q as u32)) as i32)
-            .collect();
+        let q = ML_KEM_Q as u32;
+        let limit = (u32::MAX / q) * q;
+        let mut coeffs = Vec::with_capacity(n);
+        while coeffs.len() < n {
+            let draw = rng.next_u32();
+            if draw < limit {
+                coeffs.push((draw % q) as i32);
+            }
+        }
         Self { n, coeffs }
+    }
+
+    pub fn round_trip_compress(&self, d: u32) -> Self {
+        Self {
+            n: self.n,
+            coeffs: self
+                .coeffs
+                .iter()
+                .map(|&c| decompress_q(compress_q(c, d), d))
+                .collect(),
+        }
     }
 
     /// Samples centered binomial distribution `CBD_eta`: sum of `eta` bits minus sum of `eta` bits, reduced mod `q`.
@@ -188,11 +241,18 @@ pub struct MlKemSimulationReport {
     pub rank_k: usize,
     pub modulus_q: i32,
     pub noise_eta: usize,
+    pub noise_eta1: usize,
+    pub noise_eta2: usize,
+    pub compress_du: u32,
+    pub compress_dv: u32,
+    pub max_abs_compression_noise: i32,
     pub quarter_q_decision_bound: i32,
     pub max_abs_decryption_noise: i32,
     pub rms_decryption_noise: f64,
     pub bit_mismatches: usize,
     pub decapsulation_exact: bool,
+    pub fo_reencap_matched: bool,
+    pub fo_implicit_rejection_used: bool,
     pub sender_shared_secret_hex: String,
     pub receiver_shared_secret_hex: String,
     /// Centered decryption error `e_dec[i]` for each polynomial slot `0..n` (for residual bar plot!).
@@ -210,12 +270,32 @@ pub fn run_ml_kem_lab(
     noise_eta: usize,
     seed: u64,
 ) -> MlKemSimulationReport {
+    let eta1 = noise_eta.clamp(1, 24);
+    let eta2 = if eta1 > profile.default_eta1() {
+        (profile.default_eta2() + (eta1 - profile.default_eta1())).clamp(1, 24)
+    } else {
+        profile.default_eta2().min(eta1).max(1)
+    };
+    run_ml_kem_lab_params(profile, eta1, eta2, false, seed)
+}
+
+/// Executes FIPS 203 ML-KEM simulation with explicit `(eta1, eta2)`, `Compress_{d_u,d_v}` noise,
+/// and Fujisaki-Okamoto (FO) re-encapsulation / implicit-rejection check.
+pub fn run_ml_kem_lab_params(
+    profile: MlKemProfile,
+    eta1_param: usize,
+    eta2_param: usize,
+    tamper_ciphertext: bool,
+    seed: u64,
+) -> MlKemSimulationReport {
     let n = profile.ring_degree_n();
     let k = profile.module_rank_k();
-    let eta = noise_eta.clamp(1, 24);
+    let eta1 = eta1_param.clamp(1, 24);
+    let eta2 = eta2_param.clamp(1, 24);
+    let (du, dv) = profile.compression_du_dv();
     let mut rng = DeterministicRng::from_seed(seed);
 
-    // 1. KeyGen: public matrix A in R_q^{k x k}, secret s in CBD_eta^k, error e in CBD_eta^k, t = A s + e
+    // 1. KeyGen: public matrix A in R_q^{k x k}, secret s in CBD_{eta1}^k, error e in CBD_{eta1}^k, t = A s + e
     let mut mat_a = vec![vec![RingPoly::zero(n); k]; k];
     for r in 0..k {
         for c in 0..k {
@@ -223,10 +303,10 @@ pub fn run_ml_kem_lab(
         }
     }
     let s_vec: Vec<RingPoly> = (0..k)
-        .map(|_| RingPoly::sample_cbd(n, eta, &mut rng))
+        .map(|_| RingPoly::sample_cbd(n, eta1, &mut rng))
         .collect();
     let e_vec: Vec<RingPoly> = (0..k)
-        .map(|_| RingPoly::sample_cbd(n, eta, &mut rng))
+        .map(|_| RingPoly::sample_cbd(n, eta1, &mut rng))
         .collect();
 
     let mut t_vec = vec![RingPoly::zero(n); k];
@@ -238,48 +318,73 @@ pub fn run_ml_kem_lab(
         t_vec[r] = acc.add(&e_vec[r]);
     }
 
-    // 2. Encapsulate random n-bit message `msg_bits`:
-    //    r_ephem, e1 in CBD_eta^k, e2 in CBD_eta
-    //    u = A^T r_ephem + e1
-    //    v = t^T r_ephem + e2 + round(q/2) * msg_bits
+    // 2. Encapsulate random n-bit message `msg_bits` with FO randomness seeded from `msg_bits`:
+    //    r in CBD_{eta1}^k, e1 in CBD_{eta2}^k, e2 in CBD_{eta2}
+    //    u = Decompress_{d_u}(Compress_{d_u}(A^T r + e1))
+    //    v = Decompress_{d_v}(Compress_{d_v}(t^T r + e2 + round(q/2) * msg_bits))
     let msg_bits: Vec<u8> = (0..n).map(|_| u8::from(rng.next_bool())).collect();
     let half_q = (ML_KEM_Q + 1) / 2; // 1665
-    let msg_poly = RingPoly {
-        n,
-        coeffs: msg_bits.iter().map(|&b| (b as i32) * half_q).collect(),
+    let build_ciphertext = |bits: &[u8]| -> (Vec<RingPoly>, RingPoly, RingPoly) {
+        let msg_p = RingPoly {
+            n,
+            coeffs: bits.iter().map(|&b| (b as i32) * half_q).collect(),
+        };
+        let mut msg_seed = seed ^ 0xF020_34B5;
+        for (idx, &bit) in bits.iter().enumerate() {
+            if bit != 0 {
+                msg_seed ^= 0x9E37_79B9_7F4A_7C15_u64.rotate_left((idx % 64) as u32);
+            }
+        }
+        let mut enc_rng = DeterministicRng::from_seed(msg_seed);
+        let r_v: Vec<RingPoly> = (0..k)
+            .map(|_| RingPoly::sample_cbd(n, eta1, &mut enc_rng))
+            .collect();
+        let e1_v: Vec<RingPoly> = (0..k)
+            .map(|_| RingPoly::sample_cbd(n, eta2, &mut enc_rng))
+            .collect();
+        let e2_p = RingPoly::sample_cbd(n, eta2, &mut enc_rng);
+
+        let mut u_raw = vec![RingPoly::zero(n); k];
+        for c in 0..k {
+            let mut acc = RingPoly::zero(n);
+            for r in 0..k {
+                acc = acc.add(&mat_a[r][c].mul_negacyclic(&r_v[r]));
+            }
+            u_raw[c] = acc.add(&e1_v[c]);
+        }
+
+        let mut v_raw = RingPoly::zero(n);
+        for i in 0..k {
+            v_raw = v_raw.add(&t_vec[i].mul_negacyclic(&r_v[i]));
+        }
+        v_raw = v_raw.add(&e2_p).add(&msg_p);
+        (u_raw, v_raw, msg_p)
     };
 
-    let r_vec: Vec<RingPoly> = (0..k)
-        .map(|_| RingPoly::sample_cbd(n, eta, &mut rng))
-        .collect();
-    let e1_vec: Vec<RingPoly> = (0..k)
-        .map(|_| RingPoly::sample_cbd(n, eta, &mut rng))
-        .collect();
-    let e2_poly = RingPoly::sample_cbd(n, eta, &mut rng);
-
-    let mut u_vec = vec![RingPoly::zero(n); k];
-    for c in 0..k {
-        let mut acc = RingPoly::zero(n);
-        for r in 0..k {
-            acc = acc.add(&mat_a[r][c].mul_negacyclic(&r_vec[r]));
-        }
-        u_vec[c] = acc.add(&e1_vec[c]);
+    let (u_raw, v_raw, msg_poly) = build_ciphertext(&msg_bits);
+    let u_comp: Vec<RingPoly> = u_raw.iter().map(|p| p.round_trip_compress(du)).collect();
+    let mut v_comp = v_raw.round_trip_compress(dv);
+    if tamper_ciphertext && !v_comp.coeffs.is_empty() {
+        v_comp.coeffs[0] = (v_comp.coeffs[0] + 600).rem_euclid(ML_KEM_Q);
     }
 
-    let mut v_poly = RingPoly::zero(n);
+    // 3. Decapsulate: compute uncompressed and compressed `w = v - s^T u` to isolate quantization noise
+    let mut s_dot_u_raw = RingPoly::zero(n);
+    let mut s_dot_u_comp = RingPoly::zero(n);
     for i in 0..k {
-        v_poly = v_poly.add(&t_vec[i].mul_negacyclic(&r_vec[i]));
+        s_dot_u_raw = s_dot_u_raw.add(&s_vec[i].mul_negacyclic(&u_raw[i]));
+        s_dot_u_comp = s_dot_u_comp.add(&s_vec[i].mul_negacyclic(&u_comp[i]));
     }
-    v_poly = v_poly.add(&e2_poly).add(&msg_poly);
+    let w_uncomp = v_raw.sub(&s_dot_u_raw);
+    let w_poly = v_comp.sub(&s_dot_u_comp);
+    let compression_delta = w_poly.sub(&w_uncomp).centered_coeffs();
+    let max_abs_compression_noise = compression_delta
+        .iter()
+        .map(|x| x.abs())
+        .max()
+        .unwrap_or(0);
 
-    // 3. Decapsulate: w = v - s^T u = round(q/2)*msg + (e^T r + e2 - s^T e1)
-    let mut s_dot_u = RingPoly::zero(n);
-    for i in 0..k {
-        s_dot_u = s_dot_u.add(&s_vec[i].mul_negacyclic(&u_vec[i]));
-    }
-    let w_poly = v_poly.sub(&s_dot_u);
-
-    // Exact decryption noise polynomial `w - msg_poly`
+    // Total decryption noise polynomial `w - msg_poly` (includes CBD + Compress_{d_u,d_v} rounding)
     let noise_poly = w_poly.sub(&msg_poly);
     let centered_noise_residuals = noise_poly.centered_coeffs();
     let quarter_q = ML_KEM_Q / 4; // 832
@@ -290,6 +395,13 @@ pub fn run_ml_kem_lab(
         let dist_half = (wc - half_q).abs();
         dec_bits.push(u8::from(dist_half <= quarter_q));
     }
+
+    // FO Re-encapsulation & implicit rejection check: K = H(m') iff c' == c, else Kbar = J(z || c)
+    let (u_re_raw, v_re_raw, _) = build_ciphertext(&dec_bits);
+    let u_re_comp: Vec<RingPoly> = u_re_raw.iter().map(|p| p.round_trip_compress(du)).collect();
+    let v_re_comp = v_re_raw.round_trip_compress(dv);
+    let fo_reencap_matched = (u_re_comp == u_comp) && (v_re_comp == v_comp);
+    let fo_implicit_rejection_used = !fo_reencap_matched;
 
     let bit_mismatches = msg_bits
         .iter()
@@ -309,7 +421,15 @@ pub fn run_ml_kem_lab(
         .sqrt();
 
     let sender_shared_secret_hex = sha256_hex(&msg_bits);
-    let receiver_shared_secret_hex = sha256_hex(&dec_bits);
+    let receiver_shared_secret_hex = if fo_reencap_matched {
+        sha256_hex(&dec_bits)
+    } else {
+        let mut rej = Vec::with_capacity(dec_bits.len() + 16);
+        rej.extend_from_slice(b"FO-IMPLICIT-REJ:");
+        rej.extend_from_slice(&seed.to_le_bytes());
+        rej.extend_from_slice(&dec_bits);
+        sha256_hex(&rej)
+    };
 
     // 2D Lattice LWE visual grid: basis b1 = [4.0, 1.1], b2 = [1.3, 3.6], secret s = (2, -1)
     let b1 = [4.0_f64, 1.1_f64];
@@ -324,7 +444,7 @@ pub fn run_ml_kem_lab(
         }
     }
     let exact_target = [2.0 * b1[0] - 1.0 * b2[0], 2.0 * b1[1] - 1.0 * b2[1]];
-    let err_scale = (eta as f64) * 0.14;
+    let err_scale = (eta1 as f64) * 0.14;
     let dx = (centered_noise_residuals[0] as f64 / 40.0).clamp(-1.8, 1.8) + err_scale * 0.45;
     let dy = (centered_noise_residuals[1] as f64 / 40.0).clamp(-1.8, 1.8) - err_scale * 0.35;
     let noisy_lwe = [exact_target[0] + dx, exact_target[1] + dy];
@@ -334,12 +454,19 @@ pub fn run_ml_kem_lab(
         ring_n: n,
         rank_k: k,
         modulus_q: ML_KEM_Q,
-        noise_eta: eta,
+        noise_eta: eta1,
+        noise_eta1: eta1,
+        noise_eta2: eta2,
+        compress_du: du,
+        compress_dv: dv,
+        max_abs_compression_noise,
         quarter_q_decision_bound: quarter_q,
         max_abs_decryption_noise,
         rms_decryption_noise,
         bit_mismatches,
-        decapsulation_exact: bit_mismatches == 0,
+        decapsulation_exact: bit_mismatches == 0 && fo_reencap_matched,
+        fo_reencap_matched,
+        fo_implicit_rejection_used,
         sender_shared_secret_hex,
         receiver_shared_secret_hex,
         centered_noise_residuals,
@@ -349,6 +476,40 @@ pub fn run_ml_kem_lab(
         lattice_basis_b1: b1,
         lattice_basis_b2: b2,
     }
+}
+
+/// Samples a signed sparse ML-DSA challenge `c in {-1, 0, +1}^n` of exact Hamming weight `tau.min(n)`.
+pub fn sample_sparse_challenge(n: usize, tau: usize, rng: &mut DeterministicRng) -> Vec<i32> {
+    let mut c = vec![0i32; n];
+    let weight = tau.min(n);
+    let mut indices: Vec<usize> = (0..n).collect();
+    for i in 0..weight {
+        let swap_idx = i + rng.next_usize(n - i);
+        indices.swap(i, swap_idx);
+        let chosen = indices[i];
+        c[chosen] = if rng.next_bool() { 1 } else { -1 };
+    }
+    c
+}
+
+/// Exact integer negacyclic polynomial product `(a * b) mod (X^n + 1)` over `Z[X]`.
+pub fn negacyclic_int_mul(a: &[i32], b: &[i32]) -> Vec<i32> {
+    let n = a.len().min(b.len());
+    let mut out = vec![0i32; n];
+    for i in 0..n {
+        if a[i] == 0 {
+            continue;
+        }
+        for j in 0..n {
+            let sum = i + j;
+            if sum < n {
+                out[sum] += a[i] * b[j];
+            } else {
+                out[sum - n] -= a[i] * b[j];
+            }
+        }
+    }
+    out
 }
 
 /// NIST FIPS 204 ML-DSA (Dilithium) Fiat-Shamir with Aborts rejection-sampling lab + Merkle-Lamport signatures.
@@ -401,14 +562,14 @@ pub fn run_pqc_signature_lab(
 
     let mut accepted = 0usize;
     for _ in 0..trials {
-        // Mask vector y uniform in [-gamma1 + 1, gamma1]
+        // Mask vector y uniform in [-gamma1 + 1, gamma1] and signed sparse challenge c in {-1, 0, +1}^n
+        let challenge_c = sample_sparse_challenge(dim_check, tau, &mut rng);
+        let cs_vec = negacyclic_int_mul(&challenge_c, &secret_s);
         let mut z_vec = Vec::with_capacity(dim_check);
-        for &s_i in &secret_s {
-            let span = (2 * gamma1) as usize;
+        let span = (2 * gamma1) as usize;
+        for d_i in 0..dim_check {
             let y_i = (rng.next_usize(span) as i32) - gamma1 + 1;
-            // Challenge polynomial sparse sum `c * s` bounded by `beta` (biased positive on s_i != 0 without rejection!)
-            let cs_i = s_i * ((rng.next_usize(tau + 1) as i32).min(tau as i32));
-            let z_i = y_i + cs_i.clamp(-beta, beta);
+            let z_i = y_i + cs_vec[d_i].clamp(-beta, beta);
             z_vec.push(z_i);
         }
         raw_hist[to_bin(z_vec[0])] += 1;
