@@ -82,3 +82,4 @@ Observed `--all-targets` verification (`cargo test --all-targets`):
 - **Illustrated PDF Guide**: `docs/QuantaCrypt_Studio_v2_2_0_Guide.pdf`
 - **Standalone 60 FPS Browser Observatory**: `web/quantacrypt_studio_preview.html`
 - **OpenQASM 2.0 Examples**: `examples/*.qasm`
+- **Machine-readable citation metadata**: [CITATION.cff](CITATION.cff)

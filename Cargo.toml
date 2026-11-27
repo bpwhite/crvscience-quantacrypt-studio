@@ -6,6 +6,8 @@ authors = ["Bryan P. White <crvscience>"]
 description = "Native safe-Rust 23-module passive stochastic quantum simulator spanning basic quantum intuition (double-slit, Mach-Zehnder, Stern-Gerlach, Zeno), qubit circuits & decoherence, qudits, photonic QKD, PQC, and advanced fault-tolerant/variational quantum computing (surface codes, VQE, QAOA, magic-state distillation)."
 license = "GPL-3.0-or-later"
 readme = "README.md"
+homepage = "https://crvscience.com/apps"
+repository = "https://github.com/bpwhite/crvscience-quantacrypt-studio"
 
 [lib]
 name = "quantacrypt_studio"
