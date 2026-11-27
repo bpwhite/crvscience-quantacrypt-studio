@@ -310,8 +310,7 @@ impl MerkleLamportDemo {
 
         // Build binary Merkle tree
         let mut levels = vec![leaf_hashes.clone()];
-        while levels.last().map(|l| l.len()).unwrap_or(0) > 1 {
-            let prev = levels.last().unwrap();
+        while let Some(prev) = levels.last().filter(|l| l.len() > 1).cloned() {
             let mut next_lvl = Vec::with_capacity(prev.len() / 2);
             for pair in prev.chunks_exact(2) {
                 let mut combined = [0u8; 64];
@@ -321,7 +320,11 @@ impl MerkleLamportDemo {
             }
             levels.push(next_lvl);
         }
-        let root = levels.last().unwrap()[0];
+        let root = levels
+            .last()
+            .and_then(|lvl| lvl.first())
+            .copied()
+            .unwrap_or([0u8; 32]);
 
         // Sign `message` using leaf `idx` (first 64 bits of SHA-256(message))
         let msg_digest = sha256(message.as_bytes());

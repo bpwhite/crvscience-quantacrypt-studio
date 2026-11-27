@@ -17,7 +17,9 @@
 
 use quantacrypt_studio::cryptanalysis::{run_grover_key_search, run_shor_cryptanalysis};
 use quantacrypt_studio::curriculum::ModuleId;
-use quantacrypt_studio::gui::{AppStage, QuantaCryptApp};
+use quantacrypt_studio::gui::{
+    build_palette_entries, search_palette_entries, AppStage, PaletteAction, QuantaCryptApp,
+};
 use quantacrypt_studio::density::{
     simulate_decoherence_trajectory, simulate_three_qubit_qec, NoiseChannelKind, QecCodeKind,
 };
@@ -26,7 +28,9 @@ use quantacrypt_studio::pqc_lattice::{
     run_ml_kem_lab, run_ml_kem_lab_params, run_pqc_signature_lab, sample_sparse_challenge,
     MlKemProfile, RingPoly, ML_KEM_Q,
 };
-use quantacrypt_studio::qkd::{simulate_b92, simulate_bb84, simulate_e91};
+use quantacrypt_studio::qkd::{
+    run_depolarizing_threshold_scorecard, simulate_b92, simulate_bb84, simulate_e91,
+};
 use quantacrypt_studio::qudit::{run_qudit_lab, QuditPreset, QuditRegister};
 use quantacrypt_studio::rng_sha256::{sha256_hex, DeterministicRng};
 use quantacrypt_studio::statevector::{simulate_teleportation, GateOp, QuantumCircuit, Statevector};
@@ -572,6 +576,113 @@ fn hotkey_navigation_hub_toggle_and_module_filter() {
 
     assert!(QuantaCryptApp::module_matches_query(ModuleId::C3MlKemLattice, "ml-kem"));
     assert!(!QuantaCryptApp::module_matches_query(ModuleId::I1DoubleSlit, "ml-kem"));
+
+    let _ = std::fs::remove_file(&tmp_db);
+}
+
+#[test]
+fn depolarizing_threshold_scorecard_crosses_surface_and_bb84_regimes() {
+    let card = run_depolarizing_threshold_scorecard(1024, 2026);
+    assert_eq!(card.rows.len(), 8);
+    // Low noise p=0.002 is below both surface-code p_th=0.010 and BB84 11% QBER threshold
+    let low = &card.rows[0];
+    assert!(low.below_surface_threshold);
+    assert!(low.surface_d7_fidelity > low.surface_d5_fidelity);
+    assert!(low.surface_d5_fidelity > low.surface_d3_fidelity);
+    assert!(low.bb84_secure);
+    assert!(low.e91_bell_violated);
+
+    // High noise p=0.160 exceeds both surface-code threshold and BB84 QBER threshold
+    let high = card.rows.last().expect("last row");
+    assert!(!high.below_surface_threshold);
+    assert!(!high.bb84_secure);
+
+    let json = card.to_json_pretty().expect("serialize scorecard json");
+    let decoded: quantacrypt_studio::qkd::DepolarizingThresholdScorecard =
+        serde_json::from_str(&json).expect("roundtrip scorecard json");
+    assert_eq!(decoded.rows.len(), 8);
+
+    let csv = card.to_csv();
+    assert_eq!(csv.lines().count(), 9);
+    assert!(csv.contains("surface_d7_fidelity"));
+    assert!(csv.contains("bb84_shor_preskill_rate"));
+}
+
+#[test]
+fn ctrl_k_palette_searches_modules_openqasm_presets_and_exports() {
+    let entries = build_palette_entries();
+    assert!(entries.len() >= 30);
+
+    let pqc_hits = search_palette_entries(&entries, "ml-kem", 5);
+    assert!(pqc_hits
+        .iter()
+        .any(|e| matches!(e.action, PaletteAction::OpenModule(ModuleId::C3MlKemLattice))));
+
+    let qudit_hits = search_palette_entries(&entries, "d1", 5);
+    assert!(qudit_hits
+        .iter()
+        .any(|e| matches!(e.action, PaletteAction::OpenModule(ModuleId::D1QuditWeylLab))));
+
+    let qasm_hits = search_palette_entries(&entries, "ghz", 5);
+    assert!(qasm_hits
+        .iter()
+        .any(|e| matches!(e.action, PaletteAction::LoadQasmPreset("ghz4"))));
+
+    let exp_hits = search_palette_entries(&entries, "threshold csv", 5);
+    assert!(exp_hits
+        .iter()
+        .any(|e| matches!(e.action, PaletteAction::ExportThresholdCsv)));
+}
+
+#[test]
+fn headless_gui_ctrl_k_opens_palette_loads_qasm_and_runs_threshold_sweep() {
+    let tmp_db = std::env::temp_dir().join(format!("quantacrypt_ctrl_k_{}.sqlite3", std::process::id()));
+    let _ = std::fs::remove_file(&tmp_db);
+    let ctx = eframe::egui::Context::default();
+    let mut app = QuantaCryptApp::new(tmp_db.clone(), true, Some(ModuleId::I1DoubleSlit));
+
+    let send = |app: &mut QuantaCryptApp, key: eframe::egui::Key, mods: eframe::egui::Modifiers| {
+        let raw = eframe::egui::RawInput {
+            screen_rect: Some(eframe::egui::Rect::from_min_size(
+                eframe::egui::Pos2::ZERO,
+                eframe::egui::vec2(1320.0, 840.0),
+            )),
+            modifiers: mods,
+            events: vec![eframe::egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: mods,
+            }],
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |c| app.ui_step(c));
+    };
+
+    // Ctrl+K opens palette and prevents H from returning to Hub while open
+    send(&mut app, eframe::egui::Key::K, eframe::egui::Modifiers::CTRL);
+    assert!(app.cmd_palette_open);
+    send(&mut app, eframe::egui::Key::H, eframe::egui::Modifiers::NONE);
+    assert_eq!(app.stage, AppStage::ModuleWorkspace);
+
+    // Escape closes palette cleanly
+    send(&mut app, eframe::egui::Key::Escape, eframe::egui::Modifiers::NONE);
+    assert!(!app.cmd_palette_open);
+
+    // Palette actions load OpenQASM GHZ-4 and run depolarizing threshold sweep
+    app.execute_palette_action(PaletteAction::LoadQasmPreset("ghz4"));
+    assert_eq!(app.ws.active_module, ModuleId::Q2CircuitEntanglement);
+    assert_eq!(app.ws.q2_circuit.num_qubits, 4);
+
+    app.execute_palette_action(PaletteAction::RunThresholdSweep);
+    assert!(app.show_threshold_modal);
+    assert_eq!(app.last_threshold_scorecard.as_ref().expect("card").rows.len(), 8);
+
+    // Escape dismisses threshold modal before returning to Hub
+    send(&mut app, eframe::egui::Key::Escape, eframe::egui::Modifiers::NONE);
+    assert!(!app.show_threshold_modal);
+    assert_eq!(app.stage, AppStage::ModuleWorkspace);
 
     let _ = std::fs::remove_file(&tmp_db);
 }

@@ -23,7 +23,9 @@ use quantacrypt_studio::curriculum::ModuleId;
 use quantacrypt_studio::gui::{render_headless_screenshot, QuantaCryptApp};
 use quantacrypt_studio::icon::app_icon_data;
 use quantacrypt_studio::pqc_lattice::{run_ml_kem_lab, MlKemProfile};
-use quantacrypt_studio::qkd::{simulate_b92, simulate_bb84, simulate_e91};
+use quantacrypt_studio::qkd::{
+    run_depolarizing_threshold_scorecard, simulate_b92, simulate_bb84, simulate_e91,
+};
 use quantacrypt_studio::qudit::{run_qudit_lab, QuditPreset};
 use quantacrypt_studio::statevector::{QuantumCircuit, Statevector};
 use std::fs;
@@ -116,6 +118,19 @@ enum Commands {
     QuditBench {
         #[arg(long, default_value_t = 4)]
         dimension: usize,
+    },
+    /// Run QKD & rotated surface-code depolarizing-noise threshold sweep & fidelity scorecard
+    ThresholdSweep {
+        #[arg(long, default_value_t = 1024)]
+        pulses: usize,
+        #[arg(long, default_value_t = 2026)]
+        seed: u64,
+        /// Output format: table, json, or csv
+        #[arg(long, default_value = "table")]
+        format: String,
+        /// Optional path to write JSON or CSV output
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
 }
 
@@ -280,6 +295,64 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "Dimension d = {} | Entanglement = {:.4} ebits | Weyl Residual = {:.2e} | QKD Tolerated QBER ~ {:.1}%",
                     rep.dimension_d, rep.entanglement_ebits, rep.weyl_residual, rep.tolerated_qber_pct
                 );
+            }
+            Commands::ThresholdSweep {
+                pulses,
+                seed,
+                format,
+                out,
+            } => {
+                let card = run_depolarizing_threshold_scorecard(pulses, seed);
+                let text = match format.to_ascii_lowercase().as_str() {
+                    "json" => card.to_json_pretty()?,
+                    "csv" => card.to_csv(),
+                    "table" => {
+                        let mut buf = format!(
+                            "=== QKD & Surface-Code Depolarizing-Noise Threshold Scorecard (pulses={}, seed={}) ===\n\
+                             Surface p_th={:.3} | Max Sub-Threshold Surface p={:.3} | Max Secure BB84 p={:.3}\n\
+                             {:<8} {:>8} {:>8} {:>6} {:>7} {:>8} {:>8} {:>8}\n",
+                            card.pulses_per_point,
+                            card.seed,
+                            card.surface_code_threshold_p,
+                            card.max_subthreshold_surface_noise_p,
+                            card.max_secure_bb84_noise_p,
+                            "Depol_p",
+                            "BB84_QBER",
+                            "SP_Rate",
+                            "Sec",
+                            "E91_|S|",
+                            "SC_d3_F",
+                            "SC_d5_F",
+                            "SC_d7_F"
+                        );
+                        for r in &card.rows {
+                            buf.push_str(&format!(
+                                "{:<8.3} {:>7.2}% {:>8.4} {:>6} {:>7.3} {:>8.4} {:>8.4} {:>8.4}\n",
+                                r.depolarizing_p,
+                                r.bb84_qber * 100.0,
+                                r.bb84_shor_preskill_rate,
+                                if r.bb84_secure { "YES" } else { "NO" },
+                                r.e91_chsh_s,
+                                r.surface_d3_fidelity,
+                                r.surface_d5_fidelity,
+                                r.surface_d7_fidelity,
+                            ));
+                        }
+                        buf
+                    }
+                    other => {
+                        return Err(format!("Unsupported format '{other}'; expected table, json, or csv").into());
+                    }
+                };
+                if let Some(path) = out {
+                    fs::write(&path, &text)?;
+                    println!(
+                        "Wrote depolarizing threshold scorecard ({format}) to {}",
+                        path.display()
+                    );
+                } else {
+                    println!("{text}");
+                }
             }
         }
         return Ok(());

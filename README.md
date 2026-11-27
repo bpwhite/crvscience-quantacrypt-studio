@@ -12,7 +12,7 @@
 
 1. **Usability & Curriculum Navigation**:
    - Keyboard navigation guarded by `!ctx.wants_keyboard_input()`: `Left`/`Right` cycle through all 23 modules, `H` toggles Observatory Hub vs. Module Workspace, `Space` pauses/resumes, `R` resets the stochastic stream, `F1` opens shortcuts/citations, `F5`/`F9` quick-save/load SQLite slots, and `Esc` dismisses open modals before returning to the Hub.
-   - Live module search/filter in both the **Simulations** menu and **Observatory Hub**, top-bar quick group filter pills (`I`, `Q`, `D`, `K`, `C`, `A`), equation/unit hover tooltips across parameter sliders, and 1-click regime presets across key modules (`I1`, `Q4`, `K1`, `C3`, `C4`, `A1`, `A2`, `A3`, `A4`).
+   - Live module search/filter in both the **Simulations** menu and **Observatory Hub**, `Ctrl+K` fuzzy command palette across all 23 modules, OpenQASM presets, and exports, top-bar quick group filter pills (`I`, `Q`, `D`, `K`, `C`, `A`), equation/unit hover tooltips across parameter sliders, and 1-click regime presets across key modules (`I1`, `Q4`, `K1`, `C3`, `C4`, `A1`, `A2`, `A3`, `A4`).
 2. **Scientific & Cryptographic Rigor**:
    - **QAOA Max-Cut (`A3`)**: Full `11`-bin cut histogram (`0..=10`) so optimal `C_max = 10` samples (e.g., bitmask `0b0101_1010`) record cleanly in bin `10` without truncation.
    - **FIPS 203 ML-KEM (`C3`)**: Exact rejection sampling for uniform `R_q` (`q = 3329`), distinct FIPS 203 Table 2 `(eta_1 = 3, eta_2 = 2)` parameters on `ML-KEM-512`, `Compress_{d_u,d_v}` / `Decompress_{d_u,d_v}` ciphertext quantization noise, and Fujisaki-Okamoto (FO) re-encapsulation / implicit rejection telemetry.
@@ -28,6 +28,7 @@
 
 | Input | Action | Notes |
 | --- | --- | --- |
+| `Ctrl/Cmd + K` | Quick-Jump Command Palette | Jump across qudit/QKD/PQC/fault-tolerant modules, OpenQASM presets, and exports |
 | `Left` / `Right` | Previous / Next module | Cycles across all 23 modules in order |
 | `H` | Toggle Observatory Hub | Switches Hub <-> Module Workspace |
 | `Space` | Play / Pause stream | Guards active text inputs (`!wants_keyboard_input`) |
@@ -53,6 +54,7 @@
 | `grover-search [--key-bits 8] [--secret-key 173] [--iterations]` | Amplitude amplification search probability report | — |
 | `ml-kem-demo [--profile ped16\|512\|768\|1024] [--eta 2] [--seed 2026]` | FIPS 203 ML-KEM encapsulation & decryption noise check | — |
 | `qudit-bench [--dimension 4]` | High-dimensional qudit (`d = 2..8`) Weyl algebra benchmark | — |
+| `threshold-sweep [--pulses 1024] [--seed 2026] [--format table\|json\|csv] [--out <PATH>]` | QKD (BB84/E91) & rotated surface-code depolarizing-noise threshold scorecard | `table` |
 
 ## 23 Autonomous Modules Across 6 Groups
 
@@ -73,7 +75,7 @@ cargo run --release
 Observed `--all-targets` verification (`cargo test --all-targets`):
 - `src\lib.rs`: `0 passed; 0 failed`
 - `src\main.rs`: `0 passed; 0 failed`
-- `tests\integration_suite.rs`: `24 passed; 0 failed` (zero warnings; verifies NIST FIPS 180-4 SHA-256 vectors, OpenQASM roundtrips/bounds, density-matrix reduced entropy, high-dim qudit Weyl residuals, Shor/Grover convergence, A3 Max-Cut bin 10, BB84 leaked-parity privacy amplification bound, ML-KEM-512 `(eta_1 = 3, eta_2 = 2)` compression noise + FO implicit rejection, and headless GUI hotkey navigation/filtering).
+- `tests\integration_suite.rs`: `27 passed; 0 failed` (zero warnings; verifies NIST FIPS 180-4 SHA-256 vectors, OpenQASM roundtrips/bounds, density-matrix reduced entropy, high-dim qudit Weyl residuals, Shor/Grover convergence, A3 Max-Cut bin 10, BB84 leaked-parity privacy amplification bound, ML-KEM-512 `(eta_1 = 3, eta_2 = 2)` compression noise + FO implicit rejection, QKD/surface-code depolarizing-noise threshold scorecard, and headless GUI `Ctrl+K` palette & hotkey navigation).
 
 ## Documentation
 

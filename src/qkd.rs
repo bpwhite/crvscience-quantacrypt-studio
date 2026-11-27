@@ -495,3 +495,117 @@ pub fn simulate_b92(
         angle_tradeoff_curve,
     }
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DepolarizingThresholdRow {
+    pub depolarizing_p: f64,
+    pub bb84_qber: f64,
+    pub bb84_shor_preskill_rate: f64,
+    pub bb84_secure: bool,
+    pub e91_chsh_s: f64,
+    pub e91_bell_violated: bool,
+    pub surface_d3_fidelity: f64,
+    pub surface_d5_fidelity: f64,
+    pub surface_d7_fidelity: f64,
+    pub below_surface_threshold: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DepolarizingThresholdScorecard {
+    pub pulses_per_point: usize,
+    pub seed: u64,
+    pub surface_code_threshold_p: f64,
+    pub qkd_bb84_qber_threshold: f64,
+    pub max_secure_bb84_noise_p: f64,
+    pub max_subthreshold_surface_noise_p: f64,
+    pub rows: Vec<DepolarizingThresholdRow>,
+}
+
+impl DepolarizingThresholdScorecard {
+    pub fn to_json_pretty(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(self)
+    }
+
+    pub fn to_csv(&self) -> String {
+        let mut out = String::from(
+            "depolarizing_p,bb84_qber,bb84_shor_preskill_rate,bb84_secure,e91_chsh_s,e91_bell_violated,surface_d3_fidelity,surface_d5_fidelity,surface_d7_fidelity,below_surface_threshold\n",
+        );
+        for r in &self.rows {
+            out.push_str(&format!(
+                "{:.4},{:.6},{:.6},{},{:.6},{},{:.6},{:.6},{:.6},{}\n",
+                r.depolarizing_p,
+                r.bb84_qber,
+                r.bb84_shor_preskill_rate,
+                r.bb84_secure,
+                r.e91_chsh_s,
+                r.e91_bell_violated,
+                r.surface_d3_fidelity,
+                r.surface_d5_fidelity,
+                r.surface_d7_fidelity,
+                r.below_surface_threshold,
+            ));
+        }
+        out
+    }
+}
+
+/// Runs a unified QKD (BB84/E91) & Rotated Surface-Code (`d in {3, 5, 7}`) depolarizing-noise
+/// threshold sweep and fidelity scorecard.
+pub fn run_depolarizing_threshold_scorecard(
+    pulses_per_point: usize,
+    seed: u64,
+) -> DepolarizingThresholdScorecard {
+    let pulses = pulses_per_point.clamp(256, 8192);
+    let p_th_surface = 0.010_f64;
+    let qber_th_bb84 = 0.110_f64;
+    let grid = [0.002_f64, 0.005, 0.010, 0.020, 0.040, 0.080, 0.120, 0.160];
+
+    let mut rows = Vec::with_capacity(grid.len());
+    let mut max_secure_bb84_noise_p = 0.0_f64;
+    let mut max_subthreshold_surface_noise_p = 0.0_f64;
+
+    for (idx, &p) in grid.iter().enumerate() {
+        let pt_seed = seed.wrapping_add((idx as u64) * 97 + 1);
+        let bb84 = simulate_bb84(pulses, 0.0, p, pt_seed);
+        let e91 = simulate_e91(pulses, (2.0 * p).min(1.0), (1.0 - p).clamp(0.5, 1.0), pt_seed);
+
+        let pl3 = (0.08 * (p / p_th_surface).powi(2)).min(0.50);
+        let pl5 = (0.08 * (p / p_th_surface).powi(3)).min(0.50);
+        let pl7 = (0.08 * (p / p_th_surface).powi(4)).min(0.50);
+
+        let f3 = (1.0 - pl3).clamp(0.0, 1.0);
+        let f5 = (1.0 - pl5).clamp(0.0, 1.0);
+        let f7 = (1.0 - pl7).clamp(0.0, 1.0);
+        let below_surface = p < p_th_surface && f7 > f5 && f5 > f3;
+
+        if bb84.channel_secure {
+            max_secure_bb84_noise_p = max_secure_bb84_noise_p.max(p);
+        }
+        if below_surface {
+            max_subthreshold_surface_noise_p = max_subthreshold_surface_noise_p.max(p);
+        }
+
+        rows.push(DepolarizingThresholdRow {
+            depolarizing_p: p,
+            bb84_qber: bb84.observed_qber,
+            bb84_shor_preskill_rate: bb84.shor_preskill_rate,
+            bb84_secure: bb84.channel_secure,
+            e91_chsh_s: e91.chsh_s_observed,
+            e91_bell_violated: e91.bell_violated,
+            surface_d3_fidelity: f3,
+            surface_d5_fidelity: f5,
+            surface_d7_fidelity: f7,
+            below_surface_threshold: below_surface,
+        });
+    }
+
+    DepolarizingThresholdScorecard {
+        pulses_per_point: pulses,
+        seed,
+        surface_code_threshold_p: p_th_surface,
+        qkd_bb84_qber_threshold: qber_th_bb84,
+        max_secure_bb84_noise_p,
+        max_subthreshold_surface_noise_p,
+        rows,
+    }
+}

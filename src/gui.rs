@@ -25,6 +25,7 @@ use crate::plotter::{
     draw_scientific_plot, draw_surface_code_grid, PlotHThreshold, PlotSeries,
 };
 use crate::pqc_lattice::{run_ml_kem_lab, MlKemProfile};
+use crate::qkd::{run_depolarizing_threshold_scorecard, DepolarizingThresholdScorecard};
 use crate::qudit::{run_qudit_lab, QuditPreset};
 use crate::statevector::{GateOp, QuantumCircuit, Statevector};
 use crate::stochastic_sim::{
@@ -43,6 +44,155 @@ pub enum AppStage {
     ModuleWorkspace,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PaletteAction {
+    OpenModule(ModuleId),
+    ToggleHub,
+    LoadQasmPreset(&'static str),
+    RunThresholdSweep,
+    ExportThresholdJson,
+    ExportThresholdCsv,
+    OpenWorksetModal,
+    QuickSaveF5,
+    QuickLoadF9,
+}
+
+#[derive(Clone, Debug)]
+pub struct PaletteEntry {
+    pub category: String,
+    pub title: String,
+    pub subtitle: String,
+    pub action: PaletteAction,
+    search_blob: String,
+}
+
+pub fn build_palette_entries() -> Vec<PaletteEntry> {
+    let mut entries = Vec::new();
+    let mut push = |cat: &str, title: String, sub: String, act: PaletteAction| {
+        let blob = format!(
+            "{} {} {}",
+            cat.to_ascii_lowercase(),
+            title.to_ascii_lowercase(),
+            sub.to_ascii_lowercase()
+        );
+        entries.push(PaletteEntry {
+            category: cat.to_string(),
+            title,
+            subtitle: sub,
+            action: act,
+            search_blob: blob,
+        });
+    };
+
+    for m in ModuleId::ALL {
+        push(
+            m.group().title(),
+            format!("[{}] {}", m.code(), m.title()),
+            m.summary().to_string(),
+            PaletteAction::OpenModule(m),
+        );
+    }
+
+    for (id, title, sub) in [
+        ("bell", "OpenQASM Preset: 2-Qubit Bell |Phi+>", "Load Bell state OpenQASM 2.0 circuit in Q2"),
+        ("ghz4", "OpenQASM Preset: 4-Qubit GHZ State", "Load 4-qubit GHZ OpenQASM 2.0 circuit in Q2"),
+        ("qft3", "OpenQASM Preset: 3-Qubit Quantum Fourier Transform", "Load 3-qubit QFT OpenQASM 2.0 circuit in Q2"),
+    ] {
+        push(
+            "OpenQASM",
+            title.to_string(),
+            sub.to_string(),
+            PaletteAction::LoadQasmPreset(id),
+        );
+    }
+
+    push(
+        "Threshold",
+        "Run QKD & Surface-Code Depolarizing-Noise Threshold Sweep".to_string(),
+        "Sweep physical depolarizing noise p across BB84, E91, and rotated surface code d=3,5,7".to_string(),
+        PaletteAction::RunThresholdSweep,
+    );
+    push(
+        "Export",
+        "Export: Depolarizing Threshold Scorecard (.json)".to_string(),
+        "Write QKD & surface-code fidelity scorecard to JSON".to_string(),
+        PaletteAction::ExportThresholdJson,
+    );
+    push(
+        "Export",
+        "Export: Depolarizing Threshold Scorecard (.csv)".to_string(),
+        "Write QKD & surface-code fidelity scorecard to CSV".to_string(),
+        PaletteAction::ExportThresholdCsv,
+    );
+    push(
+        "Export",
+        "Worksets & Portable .qworkset.json Modal".to_string(),
+        "Manage SQLite WAL slots and portable SHA-256 JSON worksets".to_string(),
+        PaletteAction::OpenWorksetModal,
+    );
+    push(
+        "View",
+        "Toggle 23-Module Observatory Hub (H)".to_string(),
+        "Switch between Observatory Hub and active Module Workspace".to_string(),
+        PaletteAction::ToggleHub,
+    );
+    push(
+        "Vault",
+        "SQLite Quick-Save (F5)".to_string(),
+        "Save active parameters into 'quicksave' SQLite WAL slot".to_string(),
+        PaletteAction::QuickSaveF5,
+    );
+    push(
+        "Vault",
+        "SQLite Quick-Load (F9)".to_string(),
+        "Restore 'quicksave' SQLite WAL slot".to_string(),
+        PaletteAction::QuickLoadF9,
+    );
+
+    entries
+}
+
+pub fn search_palette_entries<'a>(
+    entries: &'a [PaletteEntry],
+    query: &str,
+    limit: usize,
+) -> Vec<&'a PaletteEntry> {
+    let trimmed = query.trim().to_ascii_lowercase();
+    if trimmed.is_empty() {
+        return entries.iter().take(limit.max(1)).collect();
+    }
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    let mut scored: Vec<(i32, &PaletteEntry)> = Vec::new();
+    for entry in entries {
+        let mut matched = true;
+        let mut score = 0_i32;
+        let title_lc = entry.title.to_ascii_lowercase();
+        for &tk in &tokens {
+            if let Some(pos) = entry.search_blob.find(tk) {
+                if title_lc.starts_with(tk) || title_lc.contains(&format!("[{tk}]")) {
+                    score += 35;
+                } else if pos < 20 {
+                    score += 18;
+                } else {
+                    score += 6;
+                }
+            } else {
+                matched = false;
+                break;
+            }
+        }
+        if matched {
+            scored.push((score, entry));
+        }
+    }
+    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    scored
+        .into_iter()
+        .take(limit.max(1))
+        .map(|(_, e)| e)
+        .collect()
+}
+
 pub struct QuantaCryptApp {
     pub stage: AppStage,
     pub ws: WorksetState,
@@ -54,6 +204,12 @@ pub struct QuantaCryptApp {
     pub show_workset_modal: bool,
     pub show_help_modal: bool,
     pub show_about_modal: bool,
+    pub cmd_palette_open: bool,
+    pub cmd_query: String,
+    pub cmd_selected_idx: usize,
+    pub cmd_entries: Vec<PaletteEntry>,
+    pub show_threshold_modal: bool,
+    pub last_threshold_scorecard: Option<DepolarizingThresholdScorecard>,
     pub slot_name_input: String,
     pub json_path_input: String,
     pub slot_list_cache: Vec<WorksetSlotSummary>,
@@ -105,6 +261,12 @@ impl QuantaCryptApp {
             show_workset_modal: false,
             show_help_modal: false,
             show_about_modal: false,
+            cmd_palette_open: false,
+            cmd_query: String::new(),
+            cmd_selected_idx: 0,
+            cmd_entries: build_palette_entries(),
+            show_threshold_modal: false,
+            last_threshold_scorecard: None,
             slot_name_input: "session_alpha".to_string(),
             json_path_input: "session_alpha.qworkset.json".to_string(),
             slot_list_cache,
@@ -142,6 +304,113 @@ impl QuantaCryptApp {
         self.ws.active_module = next_m;
         self.arena.reset_stream(self.ws.seed, next_m);
         self.stage = AppStage::ModuleWorkspace;
+    }
+
+    pub fn ensure_threshold_scorecard(&mut self) -> &DepolarizingThresholdScorecard {
+        if self.last_threshold_scorecard.is_none() {
+            self.last_threshold_scorecard =
+                Some(run_depolarizing_threshold_scorecard(1024, self.ws.seed));
+        }
+        self.last_threshold_scorecard
+            .get_or_insert_with(|| run_depolarizing_threshold_scorecard(1024, self.ws.seed))
+    }
+
+    fn export_threshold_scorecard_dialog(&mut self, is_csv: bool) {
+        let card = self.ensure_threshold_scorecard().clone();
+        let (default_name, filter_lbl, ext, payload_res) = if is_csv {
+            (
+                "quantacrypt_threshold_scorecard.csv",
+                "CSV Table",
+                "csv",
+                Ok(card.to_csv()),
+            )
+        } else {
+            (
+                "quantacrypt_threshold_scorecard.json",
+                "JSON Scorecard",
+                "json",
+                card.to_json_pretty()
+                    .map_err(|e| format!("JSON serialize error: {e}")),
+            )
+        };
+        let payload = match payload_res {
+            Ok(txt) => txt,
+            Err(e) => {
+                self.status_banner = e;
+                return;
+            }
+        };
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter(filter_lbl, &[ext])
+            .set_file_name(default_name)
+            .save_file()
+        {
+            match std::fs::write(&path, payload) {
+                Ok(()) => {
+                    self.status_banner = format!(
+                        "Exported depolarizing threshold scorecard ({}) to {}",
+                        ext.to_uppercase(),
+                        path.display()
+                    );
+                }
+                Err(e) => {
+                    self.status_banner = format!("Scorecard export error: {e}");
+                }
+            }
+        }
+    }
+
+    pub fn execute_palette_action(&mut self, act: PaletteAction) {
+        match act {
+            PaletteAction::OpenModule(m) => {
+                self.ws.active_module = m;
+                self.arena.reset_stream(self.ws.seed, m);
+                self.stage = AppStage::ModuleWorkspace;
+                self.status_banner = format!("Jumped to [{}] {}", m.code(), m.title());
+            }
+            PaletteAction::ToggleHub => {
+                self.stage = match self.stage {
+                    AppStage::CurriculumHub => AppStage::ModuleWorkspace,
+                    AppStage::ModuleWorkspace => AppStage::CurriculumHub,
+                };
+            }
+            PaletteAction::LoadQasmPreset(preset) => {
+                self.ws.active_module = ModuleId::Q2CircuitEntanglement;
+                self.ws.q2_circuit = match preset {
+                    "ghz4" => {
+                        self.ws.q2_bipartite_cut = 2;
+                        QuantumCircuit::preset_ghz(4)
+                    }
+                    "qft3" => QuantumCircuit::preset_qft(3),
+                    _ => QuantumCircuit::preset_bell_phi_plus(),
+                };
+                self.ws.q2_step_cursor = self.ws.q2_circuit.ops.len();
+                self.ws.q2_qasm_buffer = self.ws.q2_circuit.to_openqasm();
+                self.q2_qasm_error = None;
+                self.sync_q2_indices();
+                self.arena
+                    .reset_stream(self.ws.seed, ModuleId::Q2CircuitEntanglement);
+                self.stage = AppStage::ModuleWorkspace;
+                self.status_banner = format!("Loaded OpenQASM preset '{preset}' in Q2.");
+            }
+            PaletteAction::RunThresholdSweep => {
+                let card = run_depolarizing_threshold_scorecard(1024, self.ws.seed);
+                self.status_banner = format!(
+                    "Threshold sweep complete (Surface p_th={:.3}, Max Secure BB84 p={:.3}).",
+                    card.surface_code_threshold_p, card.max_secure_bb84_noise_p
+                );
+                self.last_threshold_scorecard = Some(card);
+                self.show_threshold_modal = true;
+            }
+            PaletteAction::ExportThresholdJson => self.export_threshold_scorecard_dialog(false),
+            PaletteAction::ExportThresholdCsv => self.export_threshold_scorecard_dialog(true),
+            PaletteAction::OpenWorksetModal => {
+                self.refresh_slot_list();
+                self.show_workset_modal = true;
+            }
+            PaletteAction::QuickSaveF5 => self.quick_save(),
+            PaletteAction::QuickLoadF9 => self.quick_load(),
+        }
     }
 
     fn group_short_code(grp: CurriculumGroup) -> &'static str {
@@ -310,6 +579,11 @@ impl QuantaCryptApp {
                     if self.show_workset_modal {
                         self.refresh_slot_list();
                     }
+                }
+                if ui.button("Jump (Ctrl+K)").clicked() {
+                    self.cmd_palette_open = !self.cmd_palette_open;
+                    self.cmd_query.clear();
+                    self.cmd_selected_idx = 0;
                 }
                 if ui.button("Citations (F1)").clicked() {
                     self.show_help_modal = !self.show_help_modal;
@@ -699,6 +973,9 @@ impl QuantaCryptApp {
                         self.arena.k1_sifted_total = 0;
                         self.arena.k1_sifted_errors = 0;
                     }
+                    if ui.small_button("Threshold Sweep & Scorecard...").clicked() {
+                        self.execute_palette_action(PaletteAction::RunThresholdSweep);
+                    }
                 }
                 ModuleId::K2E91BellChsh => {
                     if ui.add(egui::Slider::new(&mut self.ws.k2_eve_decoherence, 0.0..=1.0).text("Eve Singlet Probe")).on_hover_text("Decoheres singlet correlation; reduces CHSH |S| = 2*sqrt(2)*V*(1-D) toward classical bound 2").changed()
@@ -816,6 +1093,9 @@ impl QuantaCryptApp {
                         }
                     });
                     ui.add(egui::Slider::new(&mut self.ws.a1_phys_error, 0.001..=0.025).text("Physical Error p")).on_hover_text("Circuit physical error p; logical error P_L(d) = 0.08*(p/p_th)^((d+1)/2), p_th ~ 1.0%");
+                    if ui.small_button("Depolarizing Threshold Scorecard...").clicked() {
+                        self.execute_palette_action(PaletteAction::RunThresholdSweep);
+                    }
                 }
                 ModuleId::A2VqeHydrogen => {
                     ui.horizontal_wrapped(|ui| {
@@ -1671,7 +1951,7 @@ impl QuantaCryptApp {
             let mut open = self.show_help_modal;
             egui::Window::new("Shortcuts & Primary Literature Citations (23 Modules)").open(&mut open).resizable(true).default_width(600.0).show(ctx, |ui| {
                 ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
-                    ui.monospace("Left/Right : Prev/Next Module  |  H : Toggle Hub  |  Space : Play/Pause  |  R : Reset  |  F5/F9 : Save/Load  |  Esc : Hub");
+                    ui.monospace("Ctrl/Cmd+K : Command Palette  |  Left/Right : Prev/Next Module  |  H : Toggle Hub  |  Space : Play/Pause  |  R : Reset  |  F5/F9 : Save/Load  |  Esc : Hub");
                     ui.separator();
                     for m in ModuleId::ALL {
                         let (lbl, url) = m.citation();
@@ -1700,15 +1980,134 @@ impl QuantaCryptApp {
                 });
             self.show_about_modal = open;
         }
+        if self.cmd_palette_open {
+            let mut open = self.cmd_palette_open;
+            let mut chosen: Option<PaletteAction> = None;
+            egui::Window::new("Quick-Jump Command Palette (Ctrl+K)")
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(false)
+                .default_width(510.0)
+                .anchor(egui::Align2::CENTER_TOP, Vec2::new(0.0, 44.0))
+                .show(ctx, |ui| {
+                    let resp = ui.text_edit_singleline(&mut self.cmd_query);
+                    if resp.changed() {
+                        self.cmd_selected_idx = 0;
+                    }
+                    resp.request_focus();
+                    let hits = search_palette_entries(&self.cmd_entries, &self.cmd_query, 18);
+                    if !hits.is_empty() {
+                        self.cmd_selected_idx = self.cmd_selected_idx.min(hits.len() - 1);
+                        if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+                            self.cmd_selected_idx = (self.cmd_selected_idx + 1).min(hits.len() - 1);
+                        }
+                        if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+                            self.cmd_selected_idx = self.cmd_selected_idx.saturating_sub(1);
+                        }
+                        if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+                            chosen = Some(hits[self.cmd_selected_idx].action.clone());
+                        }
+                    } else {
+                        self.cmd_selected_idx = 0;
+                    }
+                    ui.small("Use Up/Down to select, Enter to execute, Esc to close.");
+                    ui.separator();
+                    ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+                        for (idx, entry) in hits.iter().enumerate() {
+                            let is_sel = idx == self.cmd_selected_idx;
+                            let lbl = format!("[{}] {} — {}", entry.category, entry.title, entry.subtitle);
+                            if ui.selectable_label(is_sel, lbl).clicked() {
+                                chosen = Some(entry.action.clone());
+                            }
+                        }
+                    });
+                });
+            self.cmd_palette_open = open;
+            if let Some(act) = chosen {
+                self.cmd_palette_open = false;
+                self.execute_palette_action(act);
+            }
+        }
+        if self.show_threshold_modal {
+            let mut open = self.show_threshold_modal;
+            let mut rerun_req = false;
+            let mut export_req: Option<bool> = None;
+            let card_opt = self.last_threshold_scorecard.clone();
+            egui::Window::new("QKD & Surface-Code Depolarizing-Noise Threshold Scorecard")
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(true)
+                .default_width(680.0)
+                .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+                .show(ctx, |ui| {
+                    if let Some(card) = &card_opt {
+                        ui.label(RichText::new(format!(
+                            "Surface Code p_th={:.3} (Max Sub-Threshold p={:.3}) | BB84 QBER<11% (Max Secure p={:.3})",
+                            card.surface_code_threshold_p,
+                            card.max_subthreshold_surface_noise_p,
+                            card.max_secure_bb84_noise_p
+                        )).strong());
+                        ui.separator();
+                        egui::Grid::new("depol_threshold_scorecard_grid").striped(true).show(ui, |ui| {
+                            ui.strong("p_depol");
+                            ui.strong("BB84 QBER");
+                            ui.strong("SP Rate");
+                            ui.strong("Sec");
+                            ui.strong("E91 |S|");
+                            ui.strong("SC d=3 F");
+                            ui.strong("SC d=5 F");
+                            ui.strong("SC d=7 F");
+                            ui.end_row();
+                            for r in &card.rows {
+                                ui.label(format!("{:.3}", r.depolarizing_p));
+                                ui.label(format!("{:.2}%", r.bb84_qber * 100.0));
+                                ui.label(format!("{:.3}", r.bb84_shor_preskill_rate));
+                                ui.label(if r.bb84_secure { "YES" } else { "NO" });
+                                ui.label(format!("{:.3}", r.e91_chsh_s));
+                                ui.label(format!("{:.4}", r.surface_d3_fidelity));
+                                ui.label(format!("{:.4}", r.surface_d5_fidelity));
+                                ui.label(format!("{:.4}", r.surface_d7_fidelity));
+                                ui.end_row();
+                            }
+                        });
+                    }
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        if ui.button("Re-Run Sweep").clicked() {
+                            rerun_req = true;
+                        }
+                        if ui.button("Export JSON...").clicked() {
+                            export_req = Some(false);
+                        }
+                        if ui.button("Export CSV...").clicked() {
+                            export_req = Some(true);
+                        }
+                        if ui.button("Close (Esc)").clicked() {
+                            self.show_threshold_modal = false;
+                        }
+                    });
+                });
+            if !open {
+                self.show_threshold_modal = false;
+            }
+            if rerun_req {
+                self.execute_palette_action(PaletteAction::RunThresholdSweep);
+            }
+            if let Some(is_csv) = export_req {
+                self.export_threshold_scorecard_dialog(is_csv);
+            }
+        }
     }
 
     pub fn ui_step(&mut self, ctx: &egui::Context) {
         ctx.set_visuals(egui::Visuals::dark());
         let wants_kb = ctx.wants_keyboard_input();
-        let (esc_pressed, space_pressed, r_pressed, h_pressed, left_pressed, right_pressed, f1_pressed, f5_pressed, f9_pressed, dt) =
+        let (esc_pressed, palette_pressed, space_pressed, r_pressed, h_pressed, left_pressed, right_pressed, f1_pressed, f5_pressed, f9_pressed, dt) =
             ctx.input(|i| {
+                let cmd_or_ctrl = i.modifiers.command || i.modifiers.ctrl;
                 (
                     i.key_pressed(egui::Key::Escape),
+                    cmd_or_ctrl && i.key_pressed(egui::Key::K),
                     i.key_pressed(egui::Key::Space),
                     i.key_pressed(egui::Key::R),
                     i.key_pressed(egui::Key::H),
@@ -1721,8 +2120,17 @@ impl QuantaCryptApp {
                 )
             });
 
+        if palette_pressed {
+            self.cmd_palette_open = !self.cmd_palette_open;
+            self.cmd_query.clear();
+            self.cmd_selected_idx = 0;
+        }
         if esc_pressed {
-            if self.show_about_modal {
+            if self.cmd_palette_open {
+                self.cmd_palette_open = false;
+            } else if self.show_threshold_modal {
+                self.show_threshold_modal = false;
+            } else if self.show_about_modal {
                 self.show_about_modal = false;
             } else if self.show_help_modal {
                 self.show_help_modal = false;
